@@ -1,5 +1,5 @@
 # Topologically associated domains are ancient features that coincide with Metazoan clusters of extreme noncoding conservation
-** Nathan Harmston<sup>*1,2,3</sup>, Elizabeth Ing-Simmons<sup>1,2,4</sup>, Ge Tan<sup>1,2</sup>, Malcolm Perry<sup>1,2</sup>, Matthias Merkenschlager<sup>2,4</sup>, Boris Lenhard<sup>*1,2,5</sup>**
+Nathan Harmston<sup>*1,2,3</sup>, Elizabeth Ing-Simmons<sup>1,2,4</sup>, Ge Tan<sup>1,2</sup>, Malcolm Perry<sup>1,2</sup>, Matthias Merkenschlager<sup>2,4</sup>, Boris Lenhard<sup>*1,2,5</sup>
 
 <sup>1</sup>Computational Regulatory Genomics, MRC London Institute of Medical Sciences, London W12 0NN, UK.<br>
 <sup>2</sup>Institute of Clinical Sciences, Faculty of Medicine, Imperial College London, London W12 0NN, UK.<br>
