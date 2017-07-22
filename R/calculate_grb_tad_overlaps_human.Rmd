@@ -1,0 +1,1021 @@
+---
+title: "calculate_grb_tad_overlaps_human"
+author: "Nathan Harmston"
+date: "18 July 2017"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures/', dpi=300,
+               echo=TRUE, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+
+```{r, echo=FALSE}
+
+figure2bpp = function(x){
+  return (x + theme_bw() +  
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), legend.position="none",
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(),
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+}
+
+library(beanplot)
+library(stringr)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(rtracklayer)
+library(marray)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+```
+
+```{r}
+setdiff.noreduce = function(x, y){
+  x.split = split(x, rep_len(c(1,2), length.out=length(x)))
+  x.split = lapply(x.split, function(x){ setdiff(x, y)})
+  x = c(x.split[[1]], x.split[[2]])
+  x = x[order(x)]
+  return(x)
+}
+```
+
+Calculate overlaps between GRBs and TADs in human. 
+
+Makes some of the panels used for Figure 2 and S3. 
+
+Apologies for the poor documentation and readability of the code - please e-mail with questions/issues/bugs.
+
+
+Load GRBs .. filter them ... and create bins using 5kb resolution for plotting.
+```{r}
+galGal4.grbs = import.bed("data/grbs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+```
+
+Generate base matrix showing extent of GRBs - i.e. window centered on center of GRBs.
+```{r}
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0))
+  
+```
+
+Calculate number of TADs overlapping with GRBs both for TADs identified using HOMER and TADs identified using HMM_calls.
+
+
+```{r import_tads}
+hesc.homer.tads = import.bed("data/tads/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
+mesenchymal.homer.tads = import.bed("data/tads/homer/hg19/mesenchymal_20kby40k_tads.domains.bed", genome="hg19")
+mesendoderm.homer.tads = import.bed("data/tads/homer/hg19/mesendoderm_20kby40k_tads.domains.bed", genome="hg19")
+neural.homer.tads = import.bed("data/tads/homer/hg19/neural_20kby40k_tads.domains.bed", genome="hg19")
+trophoectoderm.homer.tads = import.bed("data/tads/homer/hg19/trophoectoderm_20kby40k_tads.domains.bed", genome="hg19")
+
+hesc.dixon.tads = import.bed("./data/TADs/dixon/hg19/h1_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesenchymal.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesenchymal_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesendoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesendoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+neural.dixon.tads = import.bed("./data/TADs/dixon/hg19/neural_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+trophoectoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/trophoectoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+
+centromere.locations.gr = import.bed("data/hg19_centromere.bed")
+
+hesc.homer.tads = setdiff.noreduce(hesc.homer.tads, centromere.locations.gr)
+mesenchymal.homer.tads = setdiff.noreduce(mesenchymal.homer.tads, centromere.locations.gr)
+mesendoderm.homer.tads = setdiff.noreduce(mesendoderm.homer.tads, centromere.locations.gr)
+neural.homer.tads = setdiff.noreduce(neural.homer.tads, centromere.locations.gr)
+trophoectoderm.homer.tads = setdiff.noreduce(trophoectoderm.homer.tads, centromere.locations.gr)
+
+hesc.dixon.tads= setdiff.noreduce(hesc.dixon.tads, centromere.locations.gr)
+mesenchymal.dixon.tads = setdiff.noreduce(mesenchymal.dixon.tads, centromere.locations.gr)
+mesendoderm.dixon.tads = setdiff.noreduce(mesendoderm.dixon.tads, centromere.locations.gr)
+neural.dixon.tads = setdiff.noreduce(neural.dixon.tads, centromere.locations.gr)
+trophoectoderm.dixon.tads = setdiff.noreduce(trophoectoderm.dixon.tads, centromere.locations.gr)
+```
+
+
+```{r}
+grbs.homer.hesc.count = table(countOverlaps(galGal4.grbs, hesc.homer.tads))
+grbs.homer.mesenchymal.count = table(countOverlaps(galGal4.grbs, mesenchymal.homer.tads))
+grbs.homer.mesendoderm.count = table(countOverlaps(galGal4.grbs, mesendoderm.homer.tads))
+grbs.homer.neural.count = table(countOverlaps(galGal4.grbs, neural.homer.tads))
+grbs.homer.trophoectoderm.count = table(countOverlaps(galGal4.grbs, trophoectoderm.homer.tads))
+
+grbs.homer.hesc.within.count = sum(countOverlaps(galGal4.grbs, hesc.homer.tads, type="within"))
+grbs.homer.mesenchymal.within.count = sum(countOverlaps(galGal4.grbs, mesenchymal.homer.tads, type="within"))
+grbs.homer.mesendoderm.within.count = sum(countOverlaps(galGal4.grbs, mesendoderm.homer.tads, type="within"))
+grbs.homer.neural.within.count = sum(countOverlaps(galGal4.grbs, neural.homer.tads, type="within"))
+grbs.homer.trophoectoderm.within.count = sum(countOverlaps(galGal4.grbs, trophoectoderm.homer.tads, type="within"))
+
+homer.overlaps = data.frame(group = c(rep("H1", length(grbs.homer.hesc.count)),
+                                      rep("ME", length(grbs.homer.mesendoderm.count)),
+                                      rep("MS", length(grbs.homer.mesenchymal.count)),
+                                      rep("NP", length(grbs.homer.neural.count)),
+                                      rep("TB", length(grbs.homer.trophoectoderm.count)),
+                                       "H1", "ME", "MS", "NP", "TB"),
+                            counts = c(grbs.homer.hesc.count, grbs.homer.mesendoderm.count, 
+                                       grbs.homer.mesenchymal.count, grbs.homer.neural.count, 
+                                       grbs.homer.trophoectoderm.count,grbs.homer.hesc.within.count,
+                                       grbs.homer.mesendoderm.within.count, grbs.homer.mesenchymal.within.count, 
+                                       grbs.homer.neural.within.count, grbs.homer.trophoectoderm.within.count),
+                            overlaps = c(names(grbs.homer.hesc.count), names(grbs.homer.mesendoderm.count),
+                                         names(grbs.homer.mesenchymal.count), names(grbs.homer.neural.count), 
+                                         names(grbs.homer.trophoectoderm.count),"within","within","within","within","within"),stringsAsFactors=FALSE)
+                              
+homer.overlaps$group = factor(homer.overlaps$group,
+                             levels=c("H1", "ME", "MS", "NP","TB"))
+homer.overlaps$overlaps = factor(homer.overlaps$overlaps,
+                             levels=c(0:10, "within"))
+homer.overlaps$overlaps = factor(homer.overlaps$overlaps,
+                             levels=c(0, "within", 1:10 ))
+
+homer.overlaps$counts[is.na(homer.overlaps$counts)] = 0
+homer.overlaps <- as.data.frame(xtabs(formula = counts ~ group + overlaps, data=homer.overlaps))
+
+grbs.dixon.hesc.count = table(countOverlaps(galGal4.grbs, hesc.dixon.tads))
+grbs.dixon.mesenchymal.count = table(countOverlaps(galGal4.grbs, mesenchymal.dixon.tads))
+grbs.dixon.mesendoderm.count = table(countOverlaps(galGal4.grbs, mesendoderm.dixon.tads))
+grbs.dixon.neural.count = table(countOverlaps(galGal4.grbs, neural.dixon.tads))
+grbs.dixon.trophoectoderm.count = table(countOverlaps(galGal4.grbs, trophoectoderm.dixon.tads))
+
+grbs.dixon.hesc.within.count = sum(countOverlaps(galGal4.grbs, hesc.dixon.tads, type="within"))
+grbs.dixon.mesenchymal.within.count = sum(countOverlaps(galGal4.grbs, mesenchymal.dixon.tads, type="within"))
+grbs.dixon.mesendoderm.within.count = sum(countOverlaps(galGal4.grbs, mesendoderm.dixon.tads, type="within"))
+grbs.dixon.neural.within.count = sum(countOverlaps(galGal4.grbs, neural.dixon.tads, type="within"))
+grbs.dixon.trophoectoderm.within.count = sum(countOverlaps(galGal4.grbs, trophoectoderm.dixon.tads, type="within"))
+
+dixon.overlaps = data.frame(group = c(rep("H1", length(grbs.dixon.hesc.count)),
+                                       rep("ME", length(grbs.dixon.mesendoderm.count)),
+                                      rep("MS", length(grbs.dixon.mesenchymal.count)),
+                                      rep("NP", length(grbs.dixon.neural.count)),
+                                      rep("TB", length(grbs.dixon.trophoectoderm.count)),
+                                      "H1", "ME", "MS", "NP", "TB"),
+                            counts = c(grbs.dixon.hesc.count, grbs.dixon.mesendoderm.count, 
+                                       grbs.dixon.mesenchymal.count, grbs.dixon.neural.count,
+                                       grbs.dixon.trophoectoderm.count, grbs.dixon.hesc.within.count,
+                                       grbs.dixon.mesendoderm.within.count, grbs.dixon.mesenchymal.within.count, 
+                                       grbs.dixon.neural.within.count, grbs.dixon.trophoectoderm.within.count),
+                            overlaps = c(names(grbs.dixon.hesc.count), names(grbs.dixon.mesendoderm.count), 
+                                         names(grbs.dixon.mesenchymal.count), names(grbs.dixon.neural.count), 
+                                         names(grbs.dixon.trophoectoderm.count), "within","within","within","within"  
+                                         ,"within"), stringsAsFactors=FALSE)
+
+
+dixon.overlaps$group = factor(dixon.overlaps$group,
+                             levels=c("H1","ME","MS","NP","TB"))
+dixon.overlaps$counts[is.na(dixon.overlaps$counts)] = 0
+dixon.overlaps <- as.data.frame(xtabs(formula = counts ~ group + overlaps, data=dixon.overlaps))
+dixon.overlaps$overlaps = factor(dixon.overlaps$overlaps,
+                             levels=c("0", "1", "2", "3", "4", "5", "6", "7", "within"))
+dixon.overlaps$overlaps = factor(dixon.overlaps$overlaps,
+                             levels=c("0", "within", "1", "2", "3", "4", "5", "6", "7"))
+```
+
+```{r homer_overlaps_human}
+ggplot(homer.overlaps, aes(x=overlaps, y=Freq, fill=group)) + geom_bar(stat="identity", position=position_dodge()) + scale_y_continuous("#GRBs", breaks=c(0, 100, 200, 300, 350)) + coord_cartesian(ylim = c(0, 350)) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), 
+    panel.background = element_blank()) + xlab("#TADs overlapping") + scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"))
+```
+
+```{r dixon_overlaps_human}
+ggplot(dixon.overlaps, aes(x=overlaps, y=Freq, fill=group)) + geom_bar(stat="identity", position=position_dodge(), size=10) +  scale_y_continuous("#GRBs", breaks=c(0, 100, 200, 300, 400, 500, 550)) + coord_cartesian(ylim = c(0, 550)) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()) + xlab("#TADs overlapping") + scale_fill_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"))
+```
+
+Now calculate distances between nearest GRB and TAD boundaries. We do not allow a GRB to have both edges nearest to the same TAD edge.
+
+```{r}
+homer.tads = list()
+dixon.tads = list()
+
+homer.grbs.tads.starts = list()
+homer.grbs.tads.ends = list()
+
+dixon.grbs.tads.starts = list()
+dixon.grbs.tads.ends = list()
+
+for(tad.name in c("H1", "ME", "MS", "NP", "TB")){
+  if(tad.name == "H1"){ homer.tads[[tad.name]] = hesc.homer.tads; dixon.tads[[tad.name]] = hesc.dixon.tads }
+  if(tad.name == "ME"){ homer.tads[[tad.name]] = mesendoderm.homer.tads; dixon.tads[[tad.name]] = mesendoderm.dixon.tads }
+  if(tad.name == "MS"){ homer.tads[[tad.name]] = mesenchymal.homer.tads; dixon.tads[[tad.name]] = mesenchymal.dixon.tads }
+  if(tad.name == "NP"){ homer.tads[[tad.name]] = neural.homer.tads; dixon.tads[[tad.name]] = neural.dixon.tads }
+  if(tad.name == "TB"){ homer.tads[[tad.name]] = trophoectoderm.homer.tads; dixon.tads[[tad.name]] = trophoectoderm.dixon.tads }
+}
+
+for( tad.name in names(homer.tads)){
+  tads = homer.tads[[tad.name]]
+  tmp.grbs = galGal4.grbs[ countOverlaps(galGal4.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  homer.grbs.tads.starts[[tad.name]] = start_dists
+  homer.grbs.tads.ends[[tad.name]] = end_dists
+}
+
+for( tad.name in names(dixon.tads)){
+  tads = dixon.tads[[tad.name]]
+  tmp.grbs = galGal4.grbs[ countOverlaps(galGal4.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  dixon.grbs.tads.starts[[tad.name]] = start_dists
+  dixon.grbs.tads.ends[[tad.name]] = end_dists
+}
+```
+
+```{r homer_distances_human}
+for(tad.name in names(homer.tads)){
+  start.hist.plot = ggplot(homer.grbs.tads.starts[[tad.name]], aes(x = dist)) + 
+    geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+    coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+    theme(axis.line = element_line(colour = "black"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(), 
+      panel.background = element_blank()) + 
+    geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+    scale_x_continuous("Relative genomic position of nearest TAD start", expand=c(0,0))
+  
+  end.hist.plot = ggplot(homer.grbs.tads.ends[[tad.name]], aes(x = dist)) + 
+    geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+    coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+    theme(axis.line = element_line(colour = "black"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(), 
+      panel.background = element_blank()) + 
+    geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+    scale_x_continuous("Relative genomic position of nearest TAD end", expand=c(0,0))
+  
+  grid.arrange(start.hist.plot, end.hist.plot, ncol=2, top=tad.name)
+}
+```
+
+```{r dixon_distances_human}
+for(tad.name in names(dixon.tads)){
+  start.hist.plot = ggplot(dixon.grbs.tads.starts[[tad.name]], aes(x = dist)) + 
+    geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+    coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+    theme(axis.line = element_line(colour = "black"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(), 
+      panel.background = element_blank()) + 
+    geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+    scale_x_continuous("Relative genomic position of nearest TAD start", expand=c(0,0))
+  
+  end.hist.plot = ggplot(dixon.grbs.tads.ends[[tad.name]], aes(x = dist)) + 
+    geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+    coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+    theme(axis.line = element_line(colour = "black"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(), 
+      panel.background = element_blank()) + 
+    geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+    scale_x_continuous("Relative genomic position of nearest TAD end", expand=c(0,0))
+  
+  grid.arrange(start.hist.plot, end.hist.plot, ncol=2, top=tad.name)
+}
+```
+
+```{r homer_distances_cumulative_human}
+x =c()
+for(tad.name in names(homer.tads)){
+  print(tad.name)
+  indexes = seq(0, 1e6, 20000)
+  plotcum = c()
+  for(ind in indexes){
+    plotcum = c(plotcum, length(which(abs(homer.grbs.tads.starts[[tad.name]]$dist) < ind & 
+                 abs(homer.grbs.tads.ends[[tad.name]]$dist) < ind)))
+  }
+  x = rbind(x, cbind(rep(tad.name,length(indexes)), indexes, plotcum))
+}
+
+colnames(x) = c("group", "dist", "counts")
+x = as.data.frame(x, stringsAsFactors=FALSE)
+x$dist = as.numeric(x$dist)
+x$counts = as.numeric(x$counts)
+x$group = factor(x$group, levels=c("H1","ME","MS","NP","TB"))
+
+ggplot(x, aes(x=dist, y=counts, group=group, colour=group)) + geom_line(size=1.5) +  
+  scale_colour_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()) + scale_y_continuous(expand=c(0,0), limits=c(0,800))
+```
+
+```{r dixon_distances_cumulative_human}
+x =c()
+for(tad.name in names(dixon.tads)){
+  print(tad.name)
+  indexes = seq(0, 2e6, 20000)
+  plotcum = c()
+  for(ind in indexes){
+    plotcum = c(plotcum, length(which(abs(dixon.grbs.tads.starts[[tad.name]]$dist) < ind & 
+                 abs(dixon.grbs.tads.ends[[tad.name]]$dist) < ind)))
+  }
+  x = rbind(x, cbind(rep(tad.name,length(indexes)), indexes, plotcum))
+}
+
+colnames(x) = c("group", "dist", "counts")
+x = as.data.frame(x, stringsAsFactors=FALSE)
+x$dist = as.numeric(x$dist)
+x$counts = as.numeric(x$counts)
+x$group = factor(x$group, levels=c("H1","ME","MS","NP","TB"))
+
+ggplot(x, aes(x=dist, y=counts, group=group, colour=group)) + geom_line(size=1.5) +  
+  scale_colour_manual(values=c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), 
+    panel.background = element_blank()) + scale_y_continuous(expand=c(0,0), limits=c(0,800))
+```
+
+```{r directionality_plots_human}
+hESC.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/h1_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+mesenchymal.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/mesenchymal_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+mesendoderm.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/mesendoderm_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+neural.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/neural_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+trophoectoderm.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/trophoectoderm_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+
+hESC.dir.raw.cov = coverage(hESC.directionality.raw, weight="score")
+mesenchymal.dir.raw.cov = coverage(mesenchymal.directionality.raw, weight="score")
+mesendoderm.dir.raw.cov = coverage(mesendoderm.directionality.raw, weight="score")
+neural.dir.raw.cov = coverage(neural.directionality.raw, weight="score")
+trophoectoderm.dir.raw.cov = coverage(trophoectoderm.directionality.raw, weight="score")
+
+plot.hESC.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesenchymal.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesendoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.neural.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.trophoectoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.hESC.raw.directionality[i, ] = viewMeans(Views(hESC.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesenchymal.raw.directionality[i, ] = viewMeans(Views(mesenchymal.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesendoderm.raw.directionality[i, ] = viewMeans(Views(mesendoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.neural.raw.directionality[i, ] = viewMeans(Views(neural.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.trophoectoderm.raw.directionality[i, ] = viewMeans(Views(trophoectoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+
+plot.hESC.melt = melt(plot.hESC.raw.directionality)
+plot.mesenchymal.melt = melt(plot.mesenchymal.raw.directionality)
+plot.mesendoderm.melt = melt(plot.mesendoderm.raw.directionality)
+plot.neural.melt = melt(plot.neural.raw.directionality)
+plot.trophoectoderm.melt = melt(plot.trophoectoderm.raw.directionality)
+
+plot.hESC.melt$code = cut(plot.hESC.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesenchymal.melt$code = cut(plot.mesenchymal.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesendoderm.melt$code = cut(plot.mesendoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.neural.melt$code = cut(plot.neural.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.trophoectoderm.melt$code = cut(plot.trophoectoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+
+ggplot.hESC.di = figure2bpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0, limits=c(-12000, 12000)))
+ggplot.mesenchymal.di = figure2bpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0))
+ggplot.mesendoderm.di = figure2bpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0))
+ggplot.neural.di = figure2bpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0))
+ggplot.trophoectoderm.di = figure2bpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0))
+
+figure2cpp = function(x){
+  return(x + theme_bw() + scale_x_continuous(expand=c(0,0)) + 
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.position="none",
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+} 
+
+ggplot.hESC.bin = figure2cpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+ggplot.mesenchymal.bin = figure2cpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+ggplot.mesendoderm.bin = figure2cpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+ggplot.neural.bin = figure2cpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+ggplot.trophoectoderm.bin = figure2cpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+ scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+
+```
+
+```{r hESCAll}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.hESC.bin,
+             ggplot.hESC.di,
+             ncol=3))
+```
+
+```{r humanAll, fig.height=6, fig.width=16}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.hESC.bin,
+             ggplot.hESC.di,
+             ggplot.mesenchymal.bin,
+             ggplot.mesenchymal.di,
+             ggplot.mesendoderm.bin,
+             ggplot.mesendoderm.di,
+             ggplot.neural.bin,
+             ggplot.neural.di,
+             ggplot.trophoectoderm.bin,
+             ggplot.trophoectoderm.di,
+             ncol=11))
+```
+
+```{r humanBin, fig.height=6, fig.width=16}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.hESC.bin,
+             ggplot.mesenchymal.bin,
+             ggplot.mesendoderm.bin,
+             ggplot.neural.bin,
+             ggplot.trophoectoderm.bin,
+             ncol=6))
+```
+
+```{r humanDI, fig.height=6, fig.width=16}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.hESC.di,
+             ggplot.mesenchymal.di,
+             ggplot.mesendoderm.di,
+             ggplot.neural.di,
+             ggplot.trophoectoderm.di,
+             ncol=6))
+```
+
+
+
+```{r hESCdi}
+print(ggplot.hESC.di)
+```
+```{r Mesenchymaldi}
+print(ggplot.mesenchymal.di)
+```
+
+```{r Mesendodermdi}
+print(ggplot.mesendoderm.di)
+```
+
+```{r Neuraldi}
+print(ggplot.neural.di)
+```
+
+```{r Trophoectodermdi}
+print(ggplot.trophoectoderm.di)
+```
+
+```{r hESCbin}
+print(ggplot.hESC.bin)
+```
+```{r Mesenchymalbin}
+print(ggplot.mesenchymal.bin)
+```
+
+```{r Mesendodermbin}
+print(ggplot.mesendoderm.bin)
+```
+
+```{r Neuralbin}
+print(ggplot.neural.bin)
+```
+
+```{r Trophoectodermbin}
+print(ggplot.trophoectoderm.bin)
+```
+
+
+
+Replots some of the directionality heatmaps using different window sizes for Figure 2 as requested by the 2nd reviewer.
+
+5kb
+============
+
+```{r}
+galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.base.melt$X2), (max(plot.base.melt$X2)-min(plot.base.melt$X2))/2, max(plot.base.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+
+plot.hESC.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesenchymal.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesendoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.neural.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.trophoectoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+```
+
+
+```{r}
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.hESC.raw.directionality[i, ] = viewMeans(Views(hESC.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesenchymal.raw.directionality[i, ] = viewMeans(Views(mesenchymal.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesendoderm.raw.directionality[i, ] = viewMeans(Views(mesendoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.neural.raw.directionality[i, ] = viewMeans(Views(neural.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.trophoectoderm.raw.directionality[i, ] = viewMeans(Views(trophoectoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+```
+
+```{r}
+s1 = c()
+s2 = c()
+for(i in 1:length(grbs.resized)){
+    ol.start = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="start", width=1))
+    ol.end = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="end", width=1))
+
+    s1 = rbind(s1, c(unique(queryHits(ol.start))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.start))))))
+    s2 = rbind(s2, c(unique(queryHits(ol.end))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.end))))))
+}
+
+boundaries_1 = s1
+colnames(boundaries_1) = c("x", "y")
+boundaries_1 = as.data.frame(boundaries_1)
+boundaries_1$x = boundaries_1$x * length(bins)
+boundaries_1$y = boundaries_1$y * 816
+boundaries_1$value = 1
+
+boundaries_2 = s2
+colnames(boundaries_2) = c("x", "y")
+boundaries_2 = as.data.frame(boundaries_2)
+boundaries_2$x = boundaries_2$x * length(bins)
+boundaries_2$y = boundaries_2$y * 816
+boundaries_2$value = 1
+```
+
+```{r fivek}
+plot.hESC.melt = melt(plot.hESC.raw.directionality)
+plot.mesenchymal.melt = melt(plot.mesenchymal.raw.directionality)
+plot.mesendoderm.melt = melt(plot.mesendoderm.raw.directionality)
+plot.neural.melt = melt(plot.neural.raw.directionality)
+plot.trophoectoderm.melt = melt(plot.trophoectoderm.raw.directionality)
+
+plot.hESC.melt$code = cut(plot.hESC.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesenchymal.melt$code = cut(plot.mesenchymal.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesendoderm.melt$code = cut(plot.mesendoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.neural.melt$code = cut(plot.neural.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.trophoectoderm.melt$code = cut(plot.trophoectoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+
+ggplot.hESC.di = figure2bpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0, limits=c(-12000, 12000))) + scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.di = figure2bpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.di = figure2bpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.di = figure2bpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.di = figure2bpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base , 
+             ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+
+print(ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+ggplot.hESC.bin = figure2cpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+   scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))  #+ scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.bin = figure2cpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))  #+ scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.bin = figure2cpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) #+ scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.bin = figure2cpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) #+ scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.bin = figure2cpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() +  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) #+ scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+boundaries_1$code = NA
+boundaries_2$code = NA
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base , 
+             ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y, fill=code), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+print(ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.hESC.bin,
+             ggplot.mesenchymal.bin,
+             ggplot.mesendoderm.bin,
+             ggplot.neural.bin,
+             ggplot.trophoectoderm.bin,
+             ncol=6))
+```
+
+
+10kb
+==========
+
+```{r}
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 10000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.base.melt$X2), (max(plot.base.melt$X2)-min(plot.base.melt$X2))/2, max(plot.base.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+```
+
+
+
+```{r}
+plot.hESC.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesenchymal.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesendoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.neural.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.trophoectoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+```
+
+
+```{r}
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.hESC.raw.directionality[i, ] = viewMeans(Views(hESC.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesenchymal.raw.directionality[i, ] = viewMeans(Views(mesenchymal.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesendoderm.raw.directionality[i, ] = viewMeans(Views(mesendoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.neural.raw.directionality[i, ] = viewMeans(Views(neural.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.trophoectoderm.raw.directionality[i, ] = viewMeans(Views(trophoectoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+```
+
+```{r}
+s1 = c()
+s2 = c()
+for(i in 1:length(grbs.resized)){
+    ol.start = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="start", width=1))
+    ol.end = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="end", width=1))
+
+    s1 = rbind(s1, c(unique(queryHits(ol.start))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.start))))))
+    s2 = rbind(s2, c(unique(queryHits(ol.end))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.end))))))
+}
+
+
+boundaries_1 = s1
+colnames(boundaries_1) = c("x", "y")
+boundaries_1 = as.data.frame(boundaries_1)
+boundaries_1$x = boundaries_1$x * length(bins)
+boundaries_1$y = boundaries_1$y * 816
+boundaries_1$value = 1
+
+boundaries_2 = s2
+colnames(boundaries_2) = c("x", "y")
+boundaries_2 = as.data.frame(boundaries_2)
+boundaries_2$x = boundaries_2$x * length(bins)
+boundaries_2$y = boundaries_2$y * 816
+boundaries_2$value = 1
+
+boundaries_1$code = NA
+boundaries_2$code = NA
+```
+
+
+```{r tenk}
+
+
+plot.hESC.melt = melt(plot.hESC.raw.directionality)
+plot.mesenchymal.melt = melt(plot.mesenchymal.raw.directionality)
+plot.mesendoderm.melt = melt(plot.mesendoderm.raw.directionality)
+plot.neural.melt = melt(plot.neural.raw.directionality)
+plot.trophoectoderm.melt = melt(plot.trophoectoderm.raw.directionality)
+
+plot.hESC.melt$code = cut(plot.hESC.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesenchymal.melt$code = cut(plot.mesenchymal.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesendoderm.melt$code = cut(plot.mesendoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.neural.melt$code = cut(plot.neural.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.trophoectoderm.melt$code = cut(plot.trophoectoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+
+ggplot.hESC.di = figure2bpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0, limits=c(-12000, 12000))) + ggtitle("hESC") + scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.di = figure2bpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Mesenchymal") + scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.di = figure2bpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Mesendoderm") + scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.di = figure2bpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Neural") + scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.di = figure2bpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Trophoectoderm") + scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base   + ggtitle("GRB"), 
+             ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+
+print(ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+ggplot.hESC.bin = figure2cpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+   scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("hESC") + scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.bin = figure2cpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Mesenchymal") + scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.bin = figure2cpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Mesendoderm") + scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.bin = figure2cpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Neural") + scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.bin = figure2cpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() +  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Trophoectoderm") + scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+boundaries_1$code = NA
+boundaries_2$code = NA
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base   + ggtitle("GRB"), 
+             ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y, fill=code), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+print(ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+```
+
+20kb
+==========
+
+```{r}
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 20000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.base.melt$X2), (max(plot.base.melt$X2)-min(plot.base.melt$X2))/2, max(plot.base.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+```
+
+
+
+```{r}
+plot.hESC.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesenchymal.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.mesendoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.neural.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.trophoectoderm.raw.directionality = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+```
+
+
+```{r}
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.hESC.raw.directionality[i, ] = viewMeans(Views(hESC.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesenchymal.raw.directionality[i, ] = viewMeans(Views(mesenchymal.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.mesendoderm.raw.directionality[i, ] = viewMeans(Views(mesendoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.neural.raw.directionality[i, ] = viewMeans(Views(neural.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.trophoectoderm.raw.directionality[i, ] = viewMeans(Views(trophoectoderm.dir.raw.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+```
+
+```{r}
+s1 = c()
+s2 = c()
+for(i in 1:length(grbs.resized)){
+    ol.start = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="start", width=1))
+    ol.end = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ),resize(galGal4.grbs[i], fix="end", width=1))
+
+    s1 = rbind(s1, c(unique(queryHits(ol.start))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.start))))))
+    s2 = rbind(s2, c(unique(queryHits(ol.end))/length(bins), rep((length(grbs.resized)-i)/length(grbs.resized), length(unique(queryHits(ol.end))))))
+}
+
+
+boundaries_1 = s1
+colnames(boundaries_1) = c("x", "y")
+boundaries_1 = as.data.frame(boundaries_1)
+boundaries_1$x = boundaries_1$x * length(bins)
+boundaries_1$y = boundaries_1$y * 816
+boundaries_1$value = 1
+
+boundaries_2 = s2
+colnames(boundaries_2) = c("x", "y")
+boundaries_2 = as.data.frame(boundaries_2)
+boundaries_2$x = boundaries_2$x * length(bins)
+boundaries_2$y = boundaries_2$y * 816
+boundaries_2$value = 1
+
+boundaries_1$code = NA
+boundaries_2$code = NA
+```
+
+```{r twentyk}
+plot.hESC.melt = melt(plot.hESC.raw.directionality)
+plot.mesenchymal.melt = melt(plot.mesenchymal.raw.directionality)
+plot.mesendoderm.melt = melt(plot.mesendoderm.raw.directionality)
+plot.neural.melt = melt(plot.neural.raw.directionality)
+plot.trophoectoderm.melt = melt(plot.trophoectoderm.raw.directionality)
+
+plot.hESC.melt$code = cut(plot.hESC.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesenchymal.melt$code = cut(plot.mesenchymal.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.mesendoderm.melt$code = cut(plot.mesendoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.neural.melt$code = cut(plot.neural.melt$value, breaks=c(-35000, -10, 10, 35000))
+plot.trophoectoderm.melt$code = cut(plot.trophoectoderm.melt$value, breaks=c(-35000, -10, 10, 35000))
+
+ggplot.hESC.di = figure2bpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0, limits=c(-12000, 12000))) + ggtitle("hESC") + scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.di = figure2bpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Mesenchymal") + scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.di = figure2bpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Mesendoderm") + scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.di = figure2bpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Neural") + scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.di = figure2bpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0)) + ggtitle("Trophoectoderm") + scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base   + ggtitle("GRB"), 
+             ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+
+print(ggplot.hESC.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.di + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+ggplot.hESC.bin = figure2cpp(ggplot(plot.hESC.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+   scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("hESC") + scale_x_continuous("", breaks=c(min(plot.hESC.melt$X2), (max(plot.hESC.melt$X2)-min(plot.hESC.melt$X2))/2, max(plot.hESC.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesenchymal.bin = figure2cpp(ggplot(plot.mesenchymal.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Mesenchymal") + scale_x_continuous("", breaks=c(min(plot.mesenchymal.melt$X2), (max(plot.mesenchymal.melt$X2)-min(plot.mesenchymal.melt$X2))/2, max(plot.mesenchymal.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.mesendoderm.bin = figure2cpp(ggplot(plot.mesendoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Mesendoderm") + scale_x_continuous("", breaks=c(min(plot.mesendoderm.melt$X2), (max(plot.mesendoderm.melt$X2)-min(plot.mesendoderm.melt$X2))/2, max(plot.mesendoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.neural.bin = figure2cpp(ggplot(plot.neural.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Neural") + scale_x_continuous("", breaks=c(min(plot.neural.melt$X2), (max(plot.neural.melt$X2)-min(plot.neural.melt$X2))/2, max(plot.neural.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+ggplot.trophoectoderm.bin = figure2cpp(ggplot(plot.trophoectoderm.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() +  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black")) + ggtitle("Trophoectoderm") + scale_x_continuous("", breaks=c(min(plot.trophoectoderm.melt$X2), (max(plot.trophoectoderm.melt$X2)-min(plot.trophoectoderm.melt$X2))/2, max(plot.trophoectoderm.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+boundaries_1$code = NA
+boundaries_2$code = NA
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base   + ggtitle("GRB"), 
+             ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y, fill=code), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1),
+             ncol=6))
+
+print(ggplot.hESC.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesenchymal.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.mesendoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.neural.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+print(ggplot.trophoectoderm.bin + geom_line(data=boundaries_1, aes(x=x, y=y), color="black", linetype=1) + geom_line(data=boundaries_2, aes(x=x, y=y), color="black", linetype=1))
+
+```
+
+
+
+
+
+```{r}
+sessionInfo()
+```
