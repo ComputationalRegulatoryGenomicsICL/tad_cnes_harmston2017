@@ -13,3 +13,8 @@ Developmental genes in metazoan genomes are surrounded by dense clusters of cons
  
  ### Scripts for reproduction of results and figures from manuscript
 All figures and results in the manuscript can be reproduced from the R scripts within this repository.<br>
+
+Script | Main figures | Supplementary figures
+-------| ------------- | -------------
+calculate_grb_tad_overlaps_human.Rmd | [Figure 2] | [Figure S2]
+calculate_grb_tad_overlaps_fly.Rmd | [Figure 2] | [Figure S2]
