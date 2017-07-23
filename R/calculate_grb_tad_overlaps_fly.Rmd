@@ -1,0 +1,298 @@
+---
+title: "calculate_grb_tad_overlaps_fly"
+author: "Nathan Harmston"
+date: "18 July 2017"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures/', dpi=300,
+               echo=TRUE, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r}
+library(beanplot)
+library(stringr)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(rtracklayer)
+library(marray)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+
+figure2bpp = function(x){
+  return (x + theme_bw() +  
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), legend.position="none",
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(),
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+}
+
+figure2cpp = function(x){
+  return(x + theme_bw() + scale_x_continuous(expand=c(0,0)) + 
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.position="none",
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+} 
+
+```
+
+Calculate overlaps between GRBs and TADs in Drosophila. 
+
+Makes some of the panels used for Figure 2 and S3. 
+
+Apologies for the poor documentation and readability of the code - please e-mail with questions/issues/bugs
+
+```{r}
+dm3.droMoj3.grbs = import.bed("data/GRBs/dm3_droMoj3_96_50/dm3_droMoj3_96_50.final.bed", genome="dm3")
+dm3.droMoj3.grbs = dm3.droMoj3.grbs[ order(width(dm3.droMoj3.grbs), decreasing=TRUE)]
+dm3.droMoj3.grbs.resized = resize(dm3.droMoj3.grbs, fix="center", width=1e6)
+binsize= 1000
+bins = IRanges(breakInChunks(1e6, binsize))
+
+plot.dm3.base = matrix(0, ncol=length(bins), nrow=length(dm3.droMoj3.grbs.resized))
+for(i in 1:length(dm3.droMoj3.grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(dm3.droMoj3.grbs.resized[i]), IRanges(start(dm3.droMoj3.grbs.resized[i])+start(bins), start(dm3.droMoj3.grbs.resized[i])+end(bins)), strand="*" ), dm3.droMoj3.grbs[i])
+    plot.dm3.base[i,unique(queryHits(ol))] = 1
+}
+plot.dm3.base.melt = melt(plot.dm3.base)
+ggplot.dm3.base = figure2bpp(ggplot(plot.dm3.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0))
+```
+
+```{r directionality_plots_fly}
+dEmbryo.directionality.raw = import.bedGraph("data/TADs/homer/dm3/dEmbryo-hic-TADs.directionIndex.bedGraph", genome="dm3")
+dEmbryo.directionality.cov = coverage(dEmbryo.directionality.raw, weight="score")
+
+plot.dEmbryo.raw.directionality = matrix(0, ncol=length(bins), nrow=length(dm3.droMoj3.grbs.resized))
+
+binned.grbs = list()
+for(i in 1:length(dm3.droMoj3.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(dm3.droMoj3.grbs.resized[i]), IRanges(start(dm3.droMoj3.grbs.resized[i])+start(bins), start(dm3.droMoj3.grbs.resized[i])+end(bins)), strand="*" )
+      
+      plot.dEmbryo.raw.directionality[i, ] = viewMeans(Views(dEmbryo.directionality.cov[[as.character(unique(seqnames(dm3.droMoj3.grbs[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(dm3.droMoj3.grbs[i])))]]))
+}
+
+plot.dEmbryo.melt = melt(plot.dEmbryo.raw.directionality)
+plot.dEmbryo.melt$code = cut(plot.dEmbryo.melt$value, breaks=c(-35000, -10, 10, 35000))
+ggplot.dEmbryo.di = figure2bpp(ggplot(plot.dEmbryo.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid="white", high = "red", midpoint = 0))
+ggplot.dEmbryo.bin = figure2cpp(ggplot(plot.dEmbryo.melt, aes(x = X2, y = rev(X1), fill = code)) + geom_tile() + 
+  scale_fill_manual(values=c("blue", "white", "red"), breaks=c(-22000,-10,10,22000), na.value="black"))
+
+```
+
+```{r dEmbryoAll}
+print(grid.arrange(ggplot.dm3.base, 
+             ggplot.dEmbryo.bin,
+             ggplot.dEmbryo.di,
+             ncol=3))
+```
+
+```{r dEmbryoBase}
+print(ggplot.dm3.base)
+```
+
+```{r dEmbryodi}
+print(ggplot.dEmbryo.di)
+```
+
+```{r dEmbryobin}
+print(ggplot.dEmbryo.bin)
+```
+
+```{r}
+homer.dm3.tads = import.bed("data/TADs/homer/dm3/dEmbryo-hic-TADs.domains.bed")
+dixon.dm3.tads = import.bed("data/TADs/dixon/dm3/dEmbryo-all.dm3.10kby20k.all.finaldomaincalls.bed")
+
+grbs.homer.dm3.count = table(countOverlaps(dm3.droMoj3.grbs, homer.dm3.tads))
+grbs.dixon.dm3.count = table(countOverlaps(dm3.droMoj3.grbs, dixon.dm3.tads))
+
+grbs.homer.dm3.within.count = sum(countOverlaps(dm3.droMoj3.grbs, homer.dm3.tads, type="within"))
+grbs.dixon.dm3.within.count = sum(countOverlaps(dm3.droMoj3.grbs, dixon.dm3.tads, type="within"))
+
+homer.overlaps = data.frame(group = c(rep("HOMER", length(grbs.homer.dm3.count)), "HOMER"),
+                            counts = c(grbs.homer.dm3.count, grbs.homer.dm3.within.count),
+                            overlaps = c(names(grbs.homer.dm3.count), "within"), stringsAsFactors=FALSE)
+dixon.overlaps = data.frame(group = c(rep("HMM_calls", length(grbs.dixon.dm3.count)), "HMM_calls"),
+                            counts = c(grbs.dixon.dm3.count, grbs.dixon.dm3.within.count),
+                            overlaps = c(names(grbs.dixon.dm3.count), "within"), stringsAsFactors=FALSE)
+all.overlaps = rbind(homer.overlaps, dixon.overlaps)
+
+all.overlaps <- as.data.frame(xtabs(formula = counts ~ group + overlaps, data=all.overlaps))
+
+all.overlaps$group = factor(all.overlaps$group,
+                             levels=c("HOMER", "HMM_calls"))
+all.overlaps$overlaps = factor(all.overlaps$overlaps,
+                             levels=c("0", "within", "1", "2", "3", "4"))
+```
+
+```{r tad_overlaps_fly}
+ggplot(all.overlaps, aes(x=overlaps, y=Freq, fill=group)) + geom_bar(stat="identity", position=position_dodge()) + scale_y_continuous("#GRBs", breaks=c(0, 100, 200, 300, 350)) + coord_cartesian(ylim = c(0, 300)) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), 
+    panel.background = element_blank()) + xlab("#TADs overlapping")
+```
+
+
+```{r homer_distances_fly}
+tads = homer.dm3.tads
+tmp.grbs = dm3.droMoj3.grbs[ countOverlaps(dm3.droMoj3.grbs, tads) > 0 ]
+
+grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+tad_starts <- resize(tads, fix="start", width = 1)
+tad_ends <- resize(tads, fix="end", width = 1)
+
+start_idx <- nearest(grb_starts, tad_starts)
+start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                      tad_idx = start_idx, 
+                      pos = start(tad_starts[start_idx]),
+                      dist = start(tad_starts[start_idx]) - start(grb_starts))
+end_idx <- nearest(grb_ends, tad_ends)
+end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                      tad_idx = end_idx, 
+                      pos = start(tad_ends[end_idx]),
+                      dist = start(tad_ends[end_idx]) - start(grb_ends))
+broken = which(end_dists$pos < start_dists$pos)
+for( i in broken ){
+  if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+    start_dists$tad_idx[i] = end_dists$tad_idx[i]
+    start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+    start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+  }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+    end_dists$tad_idx[i] = start_dists$tad_idx[i]
+    end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+    end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+  }
+}
+  
+start.hist.plot = ggplot(start_dists, aes(x = dist)) + 
+geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+coord_cartesian(xlim = c(-500000, 500000)) + theme_bw() + 
+theme(axis.line = element_line(colour = "black"),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(), 
+  panel.background = element_blank()) + 
+geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+scale_x_continuous("Relative genomic position of nearest TAD start", breaks=c(-5e5, -2.5e5, 0, 2.5e5, 5e5), expand=c(0,0))
+
+end.hist.plot = ggplot(end_dists, aes(x = dist)) + 
+geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+coord_cartesian(xlim = c(-500000, 500000)) + theme_bw() + 
+theme(axis.line = element_line(colour = "black"),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(), 
+  panel.background = element_blank()) + 
+geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+scale_x_continuous("Relative genomic position of nearest TAD end", breaks=c(-5e5, -2.5e5, 0, 2.5e5, 5e5), expand=c(0,0))
+
+grid.arrange(start.hist.plot, end.hist.plot, ncol=2, top="DM3")
+x =c()
+indexes = seq(0, 6e5, 5000)
+plotcum = c()
+for(ind in indexes){
+  plotcum = c(plotcum, length(which(abs(start_dists$dist) < ind & 
+                 abs(end_dists$dist) < ind)))
+}
+x = rbind(x, cbind(rep("HOMER",length(indexes)), indexes, plotcum))
+
+```
+
+
+```{r dixon_distances_fly}
+tads = dixon.dm3.tads
+tmp.grbs = dm3.droMoj3.grbs[ countOverlaps(dm3.droMoj3.grbs, tads) > 0 ]
+
+grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+tad_starts <- resize(tads, fix="start", width = 1)
+tad_ends <- resize(tads, fix="end", width = 1)
+
+start_idx <- nearest(grb_starts, tad_starts)
+start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                      tad_idx = start_idx, 
+                      pos = start(tad_starts[start_idx]),
+                      dist = start(tad_starts[start_idx]) - start(grb_starts))
+end_idx <- nearest(grb_ends, tad_ends)
+end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                      tad_idx = end_idx, 
+                      pos = start(tad_ends[end_idx]),
+                      dist = start(tad_ends[end_idx]) - start(grb_ends))
+broken = which(end_dists$pos < start_dists$pos)
+for( i in broken ){
+  if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+    start_dists$tad_idx[i] = end_dists$tad_idx[i]
+    start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+    start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+  }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+    end_dists$tad_idx[i] = start_dists$tad_idx[i]
+    end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+    end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+  }
+}
+  
+start.hist.plot = ggplot(start_dists, aes(x = dist)) + 
+geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+coord_cartesian(xlim = c(-500000, 500000)) + theme_bw() + 
+theme(axis.line = element_line(colour = "black"),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(), 
+  panel.background = element_blank()) + 
+geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+scale_x_continuous("Relative genomic position of nearest TAD start", breaks=c(-5e5, -2.5e5, 0, 2.5e5, 5e5), expand=c(0,0))
+
+end.hist.plot = ggplot(end_dists, aes(x = dist)) + 
+geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+coord_cartesian(xlim = c(-500000, 500000)) + theme_bw() + 
+theme(axis.line = element_line(colour = "black"),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(), 
+  panel.background = element_blank()) + 
+geom_vline(xintercept = 0, linetype = 2, colour = "red") +  scale_y_continuous("Count", expand = c(0, 0), limits=c(0,150)) +
+scale_x_continuous("Relative genomic position of nearest TAD end", breaks=c(-5e5, -2.5e5, 0, 2.5e5, 5e5), expand=c(0,0))
+
+grid.arrange(start.hist.plot, end.hist.plot, ncol=2, top="DM3")
+
+
+indexes = seq(0, 6e5, 5000)
+plotcum = c()
+for(ind in indexes){
+  plotcum = c(plotcum, length(which(abs(start_dists$dist) < ind & 
+                 abs(end_dists$dist) < ind)))
+}
+x = rbind(x, cbind(rep("DIXON",length(indexes)), indexes, plotcum))
+```
+
+```{r tad_distances_cumulative_fly}
+colnames(x) = c("group", "dist", "counts")
+x = as.data.frame(x, stringsAsFactors=FALSE)
+x$dist = as.numeric(x$dist)
+x$counts = as.numeric(x$counts)
+x$group = factor(x$group, levels=c("HOMER","DIXON"))
+
+ggplot(x, aes(x=dist, y=counts, group=group, colour=group)) + geom_line(size=1.5) +  
+  scale_colour_manual(values=c("#E41A1C", "#377EB8" ), expand=c(0,0)) + theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()) + scale_y_continuous(expand=c(0,0), limits=c(0,320)) + scale_x_continuous(expand=c(0,0)) 
+```
+
+```{r}
+sessionInfo()
+```
