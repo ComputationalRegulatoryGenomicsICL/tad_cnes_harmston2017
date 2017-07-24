@@ -1,0 +1,167 @@
+---
+title: "classify_dev_nondev"
+author: "Nathan Harmston"
+date: "22 July 2017"
+output: html_document
+---
+
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures', dpi=300,
+               echo=TRUE, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+
+```{r echo=FALSE}
+library(beanplot)
+library(stringr)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(rtracklayer)
+library(Gviz)
+library(BSgenome.Mmusculus.UCSC.mm9)
+library(BSgenome.Hsapiens.UCSC.hg19)
+library(marray)
+library(GenomicRanges)
+library(biomaRt)
+library(GenomicFeatures)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+screen.grbs = function(tads, grbs, top=0.8, bottom=0.2){
+  
+  overlaps_all <- findOverlaps(tads, grbs)
+  overlaps_tab <- table(queryHits(overlaps_all))
+  tads$id <- 1:length(tads)
+
+  tads$overlap_count <- ifelse(tads$id %in% names(overlaps_tab), 
+                                 overlaps_tab[as.character(tads$id)], 
+                                 0)
+
+  #get total width and fraction overlap
+  tads$overlap <- 0
+  tads$fractionoverlap <- 0
+  overlap_idx <- queryHits(overlaps_all)
+  for (i in overlap_idx){
+
+   tads$overlap[i] <- sum(width(BiocGenerics::intersect(tads[i], grbs)))
+  }
+  tads$fractionoverlap <- tads$overlap/width(tads)
+
+  plot(density(tads$fractionoverlap), type = "l", 
+     main = "Fraction overlap between TADs and GRBs")
+  abline(v = c(bottom, top), lty = 2)
+
+  tads$class <- "nonGRB"
+  tads$class[tads$fractionoverlap > bottom] <- "screened"
+  tads$class[tads$fractionoverlap > top & tads$overlap_count == 1] <- "GRB"
+  tads$class[tads$overlap_count > 1] <- "screened"
+  return(tads)
+} 
+
+
+
+setdiff.noreduce = function(x, y){
+  x.split = split(x, rep_len(c(1,2), length.out=length(x)))
+  x.split = lapply(x.split, function(x){ setdiff(x, y, ignore.strand=TRUE)})
+  x = c(x.split[[1]], x.split[[2]])
+  x = x[order(x)]
+  return(x)
+  }
+  
+```
+
+Load oall of the relevant data.
+```{r}
+galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+
+hesc.homer.tads = import.bed("data/TADs/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
+mesenchymal.homer.tads = import.bed("data/TADs/homer/hg19/mesenchymal_20kby40k_tads.domains.bed", genome="hg19")
+mesendoderm.homer.tads = import.bed("data/TADs/homer/hg19/mesendoderm_20kby40k_tads.domains.bed", genome="hg19")
+neural.homer.tads = import.bed("data/TADs/homer/hg19/neural_20kby40k_tads.domains.bed", genome="hg19")
+trophoectoderm.homer.tads = import.bed("data/TADs/homer/hg19/trophoectoderm_20kby40k_tads.domains.bed", genome="hg19")
+
+hesc.dixon.tads = import.bed("./data/TADs/dixon/hg19/h1_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesenchymal.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesenchymal_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesendoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesendoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+neural.dixon.tads = import.bed("./data/TADs/dixon/hg19/neural_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+trophoectoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/trophoectoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+
+centromere.locations.gr = import.bed("data/hg19_centromere.bed")
+
+hesc.homer.tads = setdiff.noreduce(hesc.homer.tads, centromere.locations.gr)
+mesenchymal.homer.tads = setdiff.noreduce(mesenchymal.homer.tads, centromere.locations.gr)
+mesendoderm.homer.tads = setdiff.noreduce(mesendoderm.homer.tads, centromere.locations.gr)
+neural.homer.tads = setdiff.noreduce(neural.homer.tads, centromere.locations.gr)
+trophoectoderm.homer.tads = setdiff.noreduce(trophoectoderm.homer.tads, centromere.locations.gr)
+
+hesc.dixon.tads= setdiff.noreduce(hesc.dixon.tads, centromere.locations.gr)
+mesenchymal.dixon.tads = setdiff.noreduce(mesenchymal.dixon.tads, centromere.locations.gr)
+mesendoderm.dixon.tads = setdiff.noreduce(mesendoderm.dixon.tads, centromere.locations.gr)
+neural.dixon.tads = setdiff.noreduce(neural.dixon.tads, centromere.locations.gr)
+trophoectoderm.dixon.tads = setdiff.noreduce(trophoectoderm.dixon.tads, centromere.locations.gr)
+```
+
+Now classify TADs in human into dev and non-dev TADs. 
+
+```{r}
+hesc.homer.tads = screen.grbs(hesc.homer.tads, galGal4.grbs)
+hesc.dixon.tads = screen.grbs(hesc.dixon.tads, galGal4.grbs)
+
+mesenchymal.homer.tads = screen.grbs(mesenchymal.homer.tads, galGal4.grbs)
+mesenchymal.dixon.tads = screen.grbs(mesenchymal.dixon.tads, galGal4.grbs)
+
+mesendoderm.homer.tads = screen.grbs(mesendoderm.homer.tads, galGal4.grbs)
+mesendoderm.dixon.tads = screen.grbs(mesendoderm.dixon.tads, galGal4.grbs)
+
+neural.homer.tads = screen.grbs(neural.homer.tads, galGal4.grbs)
+neural.dixon.tads = screen.grbs(neural.dixon.tads, galGal4.grbs)
+
+trophoectoderm.homer.tads = screen.grbs(trophoectoderm.homer.tads, galGal4.grbs)
+trophoectoderm.dixon.tads = screen.grbs(trophoectoderm.dixon.tads, galGal4.grbs)
+```
+
+
+```{r}
+saveRDS(hesc.homer.tads, "data/hesc.homer.tads.screened.rds")
+saveRDS(hesc.dixon.tads, "data/hesc.dixon.tads.screened.rds")
+saveRDS(mesenchymal.homer.tads, "data/mesenchymal.homer.tads.screened.rds")
+saveRDS(mesenchymal.dixon.tads, "data/mesenchymal.dixon.tads.screened.rds")
+saveRDS(mesendoderm.homer.tads, "data/mesendoderm.homer.tads.screened.rds")
+saveRDS(mesendoderm.dixon.tads, "data/mesendoderm.dixon.tads.screened.rds")
+saveRDS(neural.homer.tads, "data/neural.homer.tads.screened.rds")
+saveRDS(neural.dixon.tads, "data/neural.dixon.tads.screened.rds")
+saveRDS(trophoectoderm.homer.tads, "data/trophoectoderm.homer.tads.screened.rds")
+saveRDS(trophoectoderm.dixon.tads, "data/trophoectoderm.dixon.tads.screened.rds")
+```
+
+Now classify TADs in Drosophila into dev and non-dev TADs. The pattern of separation is not as obvious as that observed in the human comparisons. 
+
+```{r}
+dm3.droMoj3.grbs = import.bed("data/GRBs/dm3_droMoj3_96_50/dm3_droMoj3_96_50.final.bed", genome="dm3")
+dm3.droMoj3.grbs = dm3.droMoj3.grbs[ order(width(dm3.droMoj3.grbs), decreasing=TRUE)]
+
+homer.dm3.tads = import.bed("data/TADs/homer/dm3/dEmbryo-hic-TADs.domains.bed")
+dixon.dm3.tads = import.bed("data/TADs/dixon/dm3/dEmbryo-all.dm3.10kby20k.all.finaldomaincalls.bed")
+strand(homer.dm3.tads) = "*"
+
+dixon.dm3.tads = dixon.dm3.tads[ seqnames(dixon.dm3.tads) %in%  c( "chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX"), ]
+homer.dm3.tads = homer.dm3.tads[ seqnames(homer.dm3.tads) %in%  c( "chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX"), ]
+
+homer.dm3.tads = screen.grbs(homer.dm3.tads, dm3.droMoj3.grbs, top=0.6, bottom=0.25 )
+dixon.dm3.tads = screen.grbs(dixon.dm3.tads, dm3.droMoj3.grbs, top=0.6, bottom=0.25)
+
+saveRDS(homer.dm3.tads, "data/homer.dm3.tads.screened.rds")
+saveRDS(dixon.dm3.tads, "data/dixon.dm3.tads.screened.rds")
+```
+
+
+```{r}
+sessionInfo()
+```
+  
