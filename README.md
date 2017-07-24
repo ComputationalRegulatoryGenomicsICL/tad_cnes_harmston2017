@@ -16,5 +16,6 @@ All figures and results in the manuscript can be reproduced from the R scripts w
 
 Script | Main figures | Supplementary figures
 -------| ------------- | -------------
-calculate_grb_tad_overlaps_human.Rmd | [Figure 2] | [Figure S2]
-calculate_grb_tad_overlaps_fly.Rmd | [Figure 2] | [Figure S2]
+plot_grbs_figure1.Rmd | Figure 1 | [FigureS1
+calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S2
+calculate_grb_tad_overlaps_fly.Rmd | Figure 2 | Figure S2
