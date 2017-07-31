@@ -1,0 +1,307 @@
+---
+title: "plot_grbs_figure3"
+output: html_document
+---
+
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures/',
+               echo=!short, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r}
+library(biomaRt)
+library(beanplot)
+library(GenomicFeatures)
+library(stringr)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(rtracklayer)
+library(marray)
+library(GenomicRanges)
+library(Gviz)
+library(ggplot2)
+library(reshape)
+  
+setdiff.noreduce = function(x, y){
+  x.split = split(x, rep_len(c(1,2), length.out=length(x)))
+  x.split = lapply(x.split, function(x){ GenomicRanges::setdiff(x, y)})
+  x = c(x.split[[1]], x.split[[2]])
+  x = x[order(x)]
+  return(x)
+}
+
+import.cnes = function(fn, target){
+    tmp = str_split(fn, "/")
+    tmp = str_split(tmp[[1]][ length(tmp[[1]])], "_")
+    species1 = tmp[[1]][2]
+    species2 = tmp[[1]][3]
+    tmp  = read.table(fn)
+  
+    if(target == species1){
+        return( GRanges(tmp[,1], IRanges(tmp[,2]+1, tmp[,3]), name=paste(tmp[,4], paste(tmp[,5]+1, tmp[,6], sep="-"), sep=":"), origin.chr=as.character(tmp[,4])) )
+    }else{
+        return( GRanges(tmp[,4], IRanges(tmp[,5]+1, tmp[,6]), name=paste(tmp[,1], paste(tmp[,2]+1, tmp[,3], sep="-"), sep=":"), origin.chr=as.character(tmp[,1])) )
+    }
+}
+
+galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+```
+
+```{r loadAnnotations, cache=TRUE}
+hg19.ens.db = loadDb("data/hg19_ensembl.sqlite")
+ens.genes = genes(hg19.ens.db)
+human = useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
+bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ens.genes$gene_id, uniqueRows=TRUE)
+ens.genes$hgnc_symbol = bm.annotations$hgnc_symbol[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$gene_biotype = bm.annotations$gene_biotype[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$description = bm.annotations$description[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$status = bm.annotations$status[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:22, sep=""), "chrX", "chrY")]
+ens.genes = ens.genes[ ens.genes$gene_biotype %in% c( "protein_coding", "miRNA" ) ]
+```
+
+
+```{r loadTADs}
+hesc.homer.tads = import.bed("data/TADs/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
+mesenchymal.homer.tads = import.bed("data/TADs/homer/hg19/mesenchymal_20kby40k_tads.domains.bed", genome="hg19")
+mesendoderm.homer.tads = import.bed("data/TADs/homer/hg19/mesendoderm_20kby40k_tads.domains.bed", genome="hg19")
+neural.homer.tads = import.bed("data/TADs/homer/hg19/neural_20kby40k_tads.domains.bed", genome="hg19")
+trophoectoderm.homer.tads = import.bed("data/TADs/homer/hg19/trophoectoderm_20kby40k_tads.domains.bed", genome="hg19")
+
+hesc.dixon.tads = import.bed("./data/TADs/dixon/hg19/h1_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesenchymal.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesenchymal_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesendoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/mesendoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+neural.dixon.tads = import.bed("./data/TADs/dixon/hg19/neural_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+trophoectoderm.dixon.tads = import.bed("./data/TADs/dixon/hg19/trophoectoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+
+centromere.locations = read.table("data/hg19_centromere.bed")
+centromere.locations.gr = reduce(GRanges(centromere.locations[,1],
+                                         IRanges(centromere.locations[,2], 
+                                                 centromere.locations[,3])))
+
+hesc.homer.tads = setdiff.noreduce(hesc.homer.tads, centromere.locations.gr)
+mesenchymal.homer.tads = setdiff.noreduce(mesenchymal.homer.tads, centromere.locations.gr)
+mesendoderm.homer.tads = setdiff.noreduce(mesendoderm.homer.tads, centromere.locations.gr)
+neural.homer.tads = setdiff.noreduce(neural.homer.tads, centromere.locations.gr)
+trophoectoderm.homer.tads = setdiff.noreduce(trophoectoderm.homer.tads, centromere.locations.gr)
+
+hesc.dixon.tads= setdiff.noreduce(hesc.dixon.tads, centromere.locations.gr)
+mesenchymal.dixon.tads = setdiff.noreduce(mesenchymal.dixon.tads, centromere.locations.gr)
+mesendoderm.dixon.tads = setdiff.noreduce(mesendoderm.dixon.tads, centromere.locations.gr)
+neural.dixon.tads = setdiff.noreduce(neural.dixon.tads, centromere.locations.gr)
+trophoectoderm.dixon.tads = setdiff.noreduce(trophoectoderm.dixon.tads, centromere.locations.gr)
+
+hESC.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/h1_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+mesenchymal.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/mesenchymal_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+mesendoderm.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/mesendoderm_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+neural.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/neural_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+trophoectoderm.directionality.raw = import.bedGraph("./data/TADs/homer/hg19/trophoectoderm_20kby40k_tads.directionIndex.bedGraph", genome="hg19")
+
+hESC.dir.raw.cov = coverage(hESC.directionality.raw, weight="score")
+mesenchymal.dir.raw.cov = coverage(mesenchymal.directionality.raw, weight="score")
+mesendoderm.dir.raw.cov = coverage(mesendoderm.directionality.raw, weight="score")
+neural.dir.raw.cov = coverage(neural.directionality.raw, weight="score")
+trophoectoderm.dir.raw.cov = coverage(trophoectoderm.directionality.raw, weight="score")
+```
+
+
+
+```{r}
+grbs.to.plot = data.frame(targets = c("MEIS1",   "RUNX2",  "IRX3" ),
+                          chromosome = c("chr2", "chr6", "chr16"),
+                          start = c(65270920, 44198640, 48476700),
+                          end = c(68723490, 46071520, 55776880), stringsAsFactors=FALSE)
+```
+
+```{r hesc_irx3, fig.height=6, fig.width=16}
+genome = "hg19"
+chr = grbs.to.plot$chromosome[grbs.to.plot$targets=="IRX3"]
+start = grbs.to.plot$start[grbs.to.plot$targets=="IRX3"]
+end = grbs.to.plot$end[grbs.to.plot$targets=="IRX3"]
+axisTrack <- GenomeAxisTrack()
+ideoTrack <- IdeogramTrack(genome="hg19", chromosome=chr)
+geneTrack = AnnotationTrack(ens.genes, genome="hg19", name="Ensembl Genes", id=ifelse(ens.genes$hgnc_symbol=="", " ", ens.genes$hgnc_symbol))
+displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+cnes  = import.cnes("data/cnes/cne2wBf_galGal4_hg19_35_50.asc", target="hg19")
+cneTrack = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr)
+galGal4.70.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_70pc_50col.bigWig")
+density_chicken <- DataTrack(range = galGal4.70.50.density.bw, genome = "hg19", 
+                                      type = "horizon", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,12),
+                                      horizon.origin=0, horizon.scale=6)
+hesc_di <- DataTrack(range = hESC.directionality.raw, genome = "hg19", type = "polygon", chromosome = chr, name = "hESC DI", baseline=0, col.baseline="black", fill.mountain = c("blue", "red"), col.mountain="black")
+
+strand(hesc.homer.tads) = "*"
+
+homer_hesc_track = AnnotationTrack(hesc.homer.tads, stacking="dense", genome=genome, chromosome=chr, name="H1 HOMER")
+displayPars(homer_hesc_track) = list(col="black", fill="gray50")
+
+
+dixon_hesc_track = AnnotationTrack(hesc.dixon.tads, stacking="dense", genome=genome, chromosome=chr, name="H1 DIXON")
+displayPars(dixon_hesc_track) = list(col="black", fill="gray50")
+
+final = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed")
+finalTrack = AnnotationTrack(final, chromosome = chr, name="FINAL")
+displayPars(finalTrack) = list(fill="coral", col.line="black", col="black")
+
+plotTracks(list(ideoTrack,
+                axisTrack,
+                hesc_di,
+                density_chicken,
+                dixon_hesc_track,
+                homer_hesc_track,
+                finalTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end, sizes=c(0.05, 0.05, 0.22, 0.22, 0.12, 0.12, 0.12, 0.2))
+
+
+```
+
+
+```{r npc_meis1, fig.height=6, fig.width=8}
+genome = "hg19"
+chr = grbs.to.plot$chromosome[grbs.to.plot$targets=="MEIS1"]
+start = grbs.to.plot$start[grbs.to.plot$targets=="MEIS1"]
+end = grbs.to.plot$end[grbs.to.plot$targets=="MEIS1"]
+axisTrack <- GenomeAxisTrack()
+ideoTrack <- IdeogramTrack(genome="hg19", chromosome=chr)
+geneTrack = AnnotationTrack(ens.genes, genome="hg19", name="Ensembl Genes", id=ifelse(ens.genes$hgnc_symbol=="", " ", ens.genes$hgnc_symbol))
+displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+cnes  = import.cnes("data/cnes/cne2wBf_galGal4_hg19_35_50.asc", target="hg19")
+cneTrack = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr)
+galGal4.70.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_70pc_50col.bigWig")
+density_chicken <- DataTrack(range = galGal4.70.50.density.bw, genome = "hg19", 
+                                      type = "horizon", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,12),
+                                      horizon.origin=0, horizon.scale=6)
+mesenchymal_di <- DataTrack(range = mesenchymal.directionality.raw, genome = "hg19", type = "polygon", chromosome = chr, name = "MS DI", baseline=0, col.baseline="black", fill.mountain = c("blue", "red"), col.mountain="black")
+
+strand(mesenchymal.homer.tads) = "*"
+
+homer_mesenchymal_track = AnnotationTrack(mesenchymal.homer.tads, stacking="dense", genome=genome, chromosome=chr, name="MS HOMER")
+displayPars(homer_mesenchymal_track) = list(col="black", fill="gray50")
+dixon_mesenchymal_track = AnnotationTrack(mesenchymal.dixon.tads, stacking="dense", genome=genome, chromosome=chr, name="MS DIXON")
+displayPars(dixon_mesenchymal_track) = list(col="black", fill="gray50")
+
+final = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed")
+finalTrack = AnnotationTrack(final, chromosome = chr, name="FINAL")
+displayPars(finalTrack) = list(fill="coral", col.line="black", col="black")
+
+plotTracks(list(ideoTrack,
+                axisTrack,
+                mesenchymal_di,
+                density_chicken,
+                dixon_mesenchymal_track,
+                homer_mesenchymal_track,
+                finalTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end, sizes=c(0.05, 0.05, 0.22, 0.22, 0.12, 0.12, 0.12, 0.2))
+
+
+```
+
+```{r me_runx2, fig.height=6, fig.width=8}
+genome = "hg19"
+chr = grbs.to.plot$chromosome[grbs.to.plot$targets=="RUNX2"]
+start = grbs.to.plot$start[grbs.to.plot$targets=="RUNX2"]
+end = grbs.to.plot$end[grbs.to.plot$targets=="RUNX2"]
+axisTrack <- GenomeAxisTrack()
+ideoTrack <- IdeogramTrack(genome="hg19", chromosome=chr)
+geneTrack = AnnotationTrack(ens.genes, genome="hg19", name="Ensembl Genes", id=ifelse(ens.genes$hgnc_symbol=="", " ", ens.genes$hgnc_symbol))
+displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+cnes  = import.cnes("data/cnes/cne2wBf_galGal4_hg19_35_50.asc", target="hg19")
+cneTrack = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr)
+galGal4.70.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_70pc_50col.bigWig")
+density_chicken <- DataTrack(range = galGal4.70.50.density.bw, genome = "hg19", 
+                                      type = "horizon", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,12),
+                                      horizon.origin=0, horizon.scale=6)
+mesendoderm_di <- DataTrack(range = mesendoderm.directionality.raw, genome = "hg19", type = "polygon", chromosome = chr, name = "ME DI", baseline=0, col.baseline="black", fill.mountain = c("blue", "red"), col.mountain="black")
+
+strand(mesendoderm.homer.tads) = "*"
+
+homer_mesendoderm_track = AnnotationTrack(mesendoderm.homer.tads, stacking="dense", genome=genome, chromosome=chr, name="MS HOMER")
+displayPars(homer_mesendoderm_track) = list(col="black", fill="gray50")
+dixon_mesendoderm_track = AnnotationTrack(mesendoderm.dixon.tads, stacking="dense", genome=genome, chromosome=chr, name="MS DIXON")
+displayPars(dixon_mesendoderm_track) = list(col="black", fill="gray50")
+
+final = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed")
+finalTrack = AnnotationTrack(final, chromosome = chr, name="FINAL")
+displayPars(finalTrack) = list(fill="coral", col.line="black", col="black")
+
+plotTracks(list(ideoTrack, 
+                axisTrack,
+                mesendoderm_di,
+                density_chicken,
+                dixon_mesendoderm_track,
+                homer_mesendoderm_track,
+                finalTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end, sizes=c(0.05, 0.05, 0.22, 0.22, 0.12, 0.12, 0.12, 0.2))
+
+```
+
+
+
+
+
+
+
+```{r hesc_mat_irx3, fig.height=16, fig.width=16}
+
+x = read.delim("~/Documents/projects/grbs_tads/tmp/h1.IRX3.20by40.txt.gz")
+x = as.matrix(x[,c(3:ncol(x))])
+row.names(x) = colnames(x)
+x[lower.tri(x)] = NA
+x.melt = melt(x)
+x.melt$X1 = factor(x.melt$X1, colnames(x))
+x.melt$X2 = factor(x.melt$X2, colnames(x))
+x.melt$value = ifelse(x.melt$value > 2, 2, x.melt$value)
+x.melt$value = ifelse(x.melt$value < -2, -2, x.melt$value)
+
+ggplot(x.melt, aes(x=X1, y=X2, fill=value)) + geom_tile(size=1) + scale_fill_gradient2(low="blue", high="red", midpoint=0) + theme_bw() + theme(axis.title=element_blank(), axis.ticks.length=unit(0,"mm"), axis.ticks.margin=unit(0,"mm"), panel.border=element_blank(), plot.margin=unit(c(0,0,0,0),"mm"),  axis.text.y=element_blank(), axis.ticks = element_blank(), axis.text.x=element_blank(), legend.position="none") + scale_y_discrete(expand=c(0,0)) + scale_x_discrete(expand=c(0,0)) + geom_abline(intercept=0, slope=1) + labs(x=NULL, y=NULL)#
+```
+
+```{r hesc_mat_meis1, fig.height=8, fig.width=8}
+
+x = read.delim("~/Documents/projects/grbs_tads/tmp/mesenchymal.MEIS1.20by40.txt.gz")
+x = as.matrix(x[,c(3:ncol(x))])
+row.names(x) = colnames(x)
+x[lower.tri(x)] = NA
+x.melt = melt(x)
+x.melt$X1 = factor(x.melt$X1, colnames(x))
+x.melt$X2 = factor(x.melt$X2, colnames(x))
+x.melt$value = ifelse(x.melt$value > 2, 2, x.melt$value)
+x.melt$value = ifelse(x.melt$value < -2, -2, x.melt$value)
+
+ggplot(x.melt, aes(x=X1, y=X2, fill=value)) + geom_tile(size=1) + scale_fill_gradient2(low="blue", high="red", midpoint=0) + theme_bw() + theme(axis.title=element_blank(), axis.ticks.length=unit(0,"mm"), axis.ticks.margin=unit(0,"mm"), panel.border=element_blank(), plot.margin=unit(c(0,0,0,0),"mm"), axis.text.y=element_blank(), axis.ticks = element_blank(), axis.text.x=element_blank(), legend.position="none") + scale_y_discrete(expand=c(0,0)) + scale_x_discrete(expand=c(0,0)) + geom_abline(intercept=0, slope=1) + labs(x=NULL, y=NULL)#
+```
+
+```{r hesc_mat_runx2, fig.height=8, fig.width=8}
+x = read.delim("~/Documents/projects/grbs_tads/tmp/mesendoderm.RUNX2.20by40.txt.gz")
+x = as.matrix(x[,c(3:ncol(x))])
+row.names(x) = colnames(x)
+x[lower.tri(x)] = NA
+x.melt = melt(x)
+x.melt$X1 = factor(x.melt$X1, colnames(x))
+x.melt$X2 = factor(x.melt$X2, colnames(x))
+x.melt$value = ifelse(x.melt$value > 2, 2, x.melt$value)
+x.melt$value = ifelse(x.melt$value < -2, -2, x.melt$value)
+
+ggplot(x.melt, aes(x=X1, y=X2, fill=value)) + geom_tile(size=1) + scale_fill_gradient2(low="blue", high="red", midpoint=0) + theme_bw() + theme(axis.title=element_blank(), axis.ticks.length=unit(0,"mm"), axis.ticks.margin=unit(0,"mm"), panel.border=element_blank(), plot.margin=unit(c(0,0,0,0),"mm"), axis.text.y=element_blank(), axis.ticks = element_blank(), axis.text.x=element_blank(), legend.position="none") + scale_y_discrete(expand=c(0,0)) + scale_x_discrete(expand=c(0,0)) + geom_abline(intercept=0, slope=1) + labs(x=NULL, y=NULL)#
+```

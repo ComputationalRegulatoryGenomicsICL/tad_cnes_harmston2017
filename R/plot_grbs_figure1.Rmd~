@@ -54,7 +54,7 @@ bins = IRanges(breakInChunks(8e6, binsize))
 ```
 
 ```{r loadAnnotations}
-hg19.ens.db = loadDb("data/hg19_ensembl.sqlite")
+hg19.ens.db = loadDb("/Users/nph/Dropbox/Topological organisation of genomic regulatory blocks/hg19_ensembl.sqlite")
 ens.genes = genes(hg19.ens.db)
 human = useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
 bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ens.genes$gene_id, uniqueRows=TRUE)

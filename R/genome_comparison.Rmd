@@ -1,0 +1,257 @@
+---
+title: "Figure5"
+author: "Nathan Harmston"
+date: "17 July 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r figure2c}
+hg19.sizes = read.table("data/genomes/hg19/hg19.chrom.sizes")
+hg19.sizes = hg19.sizes[ hg19.sizes[,1] %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+mm9.sizes = read.table("data/genomes/mm9/mm9.chrom.sizes")
+mm9.sizes = hg19.sizes[ mm9.sizes[,1] %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+monDom5.sizes = read.table("data/genomes/monDom5/monDom5.chrom.sizes")
+monDom5.sizes = monDom5.sizes[ monDom5.sizes[,1] %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+galGal4.sizes = read.table("data/genomes/galGal4/galGal4.chrom.sizes")
+lepOcu1.sizes = read.table("data/genomes/lepOcu1/lepOcu1.chrom.sizes")
+lepOcu1.sizes = lepOcu1.sizes[ lepOcu1.sizes[,1] %in% c( paste("chrLG", 1:30, sep=""), "chrX", "chrY"), ]
+dm3.sizes = read.table("data/genomes/dm3/dm3.chrom.sizes")
+dm3.sizes = dm3.sizes[ dm3.sizes[,1] %in%  c( "chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX"), ]
+ce10.sizes = read.table("data/genomes/ce10/ce10.chrom.sizes")
+ce10.sizes = ce10.sizes[ ce10.sizes[,1] %in% c(  "chrI", "chrII", "chrIII", "chrIV", "chrV", "chrX"), ]
+
+oryCun2.sizes = read.table("data/genomes/oryCun2/oryCun2.chrom.sizes")
+oryCun2.sizes = oryCun2.sizes[ oryCun2.sizes[,1] %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"),]
+
+canFam3.sizes = read.table("data/genomes/canFam3/canFam3.chrom.sizes")
+canFam3.sizes = canFam3.sizes[ canFam3.sizes[,1] %in% c( paste("chr", 1:38, sep=""), "chrX", "chrY"),]
+
+rheMac3.sizes = read.table("data/genomes/rheMac3/rheMac3.chrom.sizes")
+rheMac3.sizes = rheMac3.sizes[ rheMac3.sizes[,1] %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"),]
+
+genome.sizes = data.frame(species = c("hg19", "rheMac3", "mm9", "canFam3", "oryCun2", "monDom5", "galGal4", "lepOcu1", "dm3", "ce10"),
+                           width=c(sum(as.numeric(hg19.sizes[,2])), sum(as.numeric(rheMac3.sizes[,2])),
+                                   sum(as.numeric(mm9.sizes[,2])), sum(as.numeric(canFam3.sizes[,2])),
+                                   sum(as.numeric(oryCun2.sizes[,2])), sum(as.numeric(monDom5.sizes[,2])), 
+                                   sum(as.numeric(galGal4.sizes[,2])), sum(as.numeric(lepOcu1.sizes[,2])),
+                                       sum(as.numeric(dm3.sizes[,2])), sum(as.numeric(ce10.sizes[,2]))))
+
+#get_radius = function(area = 1) sqrt(area/pi)
+#plot(-10:10, ylim=c(0,70),type="n",xlab="",ylab="")
+#draw.circle(0, 5, get_radius(genome.sizes[1,2]/1e7), col="red")
+#draw.circle(0, 15, get_radius(genome.sizes[2,2]/1e7), col="red")
+#draw.circle(0, 25, get_radius(genome.sizes[3,2]/1e7), col="red")
+#draw.circle(0, 35, get_radius(genome.sizes[4,2]/1e7), col="red")
+#draw.circle(0, 55, get_radius(genome.sizes[6,2]/1e7), col="red")
+#draw.circle(0, 45, get_radius(genome.sizes[5,2]/1e7), col="red")
+
+hg19.galGal4.grb.sizes = width(galGal4.grbs)
+
+hg19.monDom5.grbs = import.bed("data/GRBs/hg19_monDom5_80_50/hg19_monDom5_80_50.final.bed")
+hg19.monDom5.grbs = hg19.monDom5.grbs[ seqnames(hg19.monDom5.grbs) != "chrY"]
+hg19.lepOcu1.grbs = import.bed("data/GRBs/hg19_lepOcu1_70_30/hg19_lepOcu1_70_30.final.bed")
+hg19.lepOcu1.grbs = hg19.lepOcu1.grbs[ seqnames(hg19.lepOcu1.grbs) != "chrY"]
+mm9.galGal4.grbs = import.bed("data/GRBs/mm9_galGal4_70_50/mm9_galGal4_70_50.final.bed")
+mm9.galGal4.grbs = mm9.galGal4.grbs[ seqnames(mm9.galGal4.grbs) != "chrY"]
+galGal4.hg19.grbs = import.bed("data/GRBs/galGal4_hg19_70_50/galGal4.hg19.70.50.final.bed")
+lepOcu1.hg19.grbs = import.bed("data/GRBs/lepOcu1_hg19_70_30/lepOcu1.hg19.70.30.final.bed")
+monDom5.hg19.grbs = import.bed("data/GRBs/monDom5_hg19_80_50/monDom5.hg19.80.50.final.bed")
+
+dm3.droMoj3.grbs = import.bed("data/GRBs/dm3_droMoj3_96_50/dm3_droMoj3_96_50.final.bed")
+
+hg19.galGal4.grb.sizes = width(galGal4.grbs)
+hg19.monDom5.grb.sizes = width(hg19.monDom5.grbs)
+hg19.lepOcu1.grb.sizes = width(hg19.lepOcu1.grbs)
+mm9.galGal4.grb.sizes = width(mm9.galGal4.grbs)
+galGal4.hg19.grb.sizes = width(galGal4.hg19.grbs)
+lepOcu1.hg19.grb.sizes = width(lepOcu1.hg19.grbs)
+monDom5.hg19.grb.sizes = width(monDom5.hg19.grbs)
+dm3.droMoj3.grb.sizes = width(dm3.droMoj3.grbs)
+
+
+grb.sizes = data.frame(comparison = c(rep("monDom5", length(monDom5.hg19.grb.sizes)),
+                                      rep("hg19", length(hg19.galGal4.grb.sizes)), 
+                                      rep("mm9", length(mm9.galGal4.grb.sizes)),
+                                      rep("galGal4", length(galGal4.hg19.grb.sizes)),
+                                      rep("lepOcu1", length(lepOcu1.hg19.grb.sizes)),
+                                      rep("dm3", length(dm3.droMoj3.grb.sizes))),
+                           width=c(monDom5.hg19.grb.sizes, hg19.galGal4.grb.sizes, mm9.galGal4.grb.sizes,
+                                       galGal4.hg19.grb.sizes, 
+                                       lepOcu1.hg19.grb.sizes, dm3.droMoj3.grb.sizes))
+
+dixon.dm3.tads = import.bed("data/TADs/dixon/dm3/dEmbryo-all.dm3.5kby10k.all.finaldomaincalls.bed")
+dixon.mm9.tads = import.bed("data/TADs/dixon/mm9/mm9.esc.total.HindIII.combined.domain.bed")
+homer.mm9.tads = import.bed("data/TADs/homer/mm9/mESC-ALL-TADs.domains.bed")
+homer.dm3.tads = import.bed("data/TADs/homer/dm3/dEmbryo-hic-5kby10k-TADs.domains.bed")
+
+dixon.rheMac3.tads = import.bed("data/TADs/dixon/rheMac3/macaque_all.20kby40k.all.finaldomaincalls.bed")
+dixon.canFam3.tads = import.bed("data/TADs/dixon/canFam3/dog_all.20kby40k.all.finaldomaincalls.bed")
+dixon.oryCun2.tads = import.bed("data/TADs/dixon/oryCun2/rabbit_all.20kby40k.all.finaldomaincalls.bed")
+
+homer.rheMac3.tads = import.bed("data/TADs/homer/rheMac3/macaque_all_20k_40k.domains.bed")
+homer.canFam3.tads = import.bed("data/TADs/homer/canFam3/dog_all_20k_40k.domains.bed")
+homer.oryCun2.tads = import.bed("data/TADs/homer/oryCun2/rabbit_all_20k_40k.domains.bed")
+
+
+dixon.hesc.width = width(hesc.dixon.tads)
+homer.hesc.width = width(hesc.homer.tads)
+
+dixon.oryCun2.width = width(dixon.oryCun2.tads)
+homer.oryCun2.width = width(homer.oryCun2.tads)
+dixon.rheMac3.width = width(dixon.rheMac3.tads)
+homer.rheMac3.width = width(homer.rheMac3.tads)
+dixon.canFam3.width = width(dixon.canFam3.tads)
+homer.canFam3.width = width(homer.canFam3.tads)
+
+
+dixon.mesenchymal.width = width(mesenchymal.dixon.tads)
+dixon.mesendoderm.width = width(mesendoderm.dixon.tads)
+dixon.neural.width = width(neural.dixon.tads)
+dixon.trophoectoderm.width = width(trophoectoderm.dixon.tads)
+dixon.mm9.hesc.width = width(dixon.mm9.tads)
+homer.mm9.hesc.width = width(homer.mm9.tads)
+dixon.dm3.tads = dixon.dm3.tads[ seqnames(dixon.dm3.tads) %in%  c( "chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX"), ]
+dixon.dm3.width = width(dixon.dm3.tads)
+
+homer.dm3.tads = homer.dm3.tads[ seqnames(homer.dm3.tads) %in%  c( "chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX"), ]
+homer.dm3.width = width(homer.dm3.tads)
+
+tad.dixon.sizes = data.frame(comparison = c(rep("hg19", length(dixon.hesc.width)), 
+                                      rep("mm9", length(dixon.mm9.hesc.width)),
+                                      rep("rheMac3", length(dixon.rheMac3.width)),
+                                      rep("oryCun2", length(dixon.oryCun2.width)),
+                                      rep("canFam3", length(dixon.canFam3.width)),
+                                      rep("dm3", length(dixon.dm3.width))),
+                           width=c(dixon.hesc.width, dixon.mm9.hesc.width, dixon.rheMac3.width, dixon.oryCun2.width, dixon.canFam3.width, dixon.dm3.width))
+
+tad.homer.sizes = data.frame(comparison = c(rep("hg19", length(homer.hesc.width)), 
+                                      rep("mm9", length(homer.mm9.hesc.width)),
+                                      rep("rheMac3", length(homer.rheMac3.width)),
+                                      rep("oryCun2", length(homer.oryCun2.width)),
+                                      rep("canFam3", length(homer.canFam3.width)),
+                                      rep("dm3", length(homer.dm3.width))),
+                           width=c(homer.hesc.width, homer.mm9.hesc.width, homer.rheMac3.width, homer.oryCun2.width, homer.canFam3.width, homer.dm3.width))
+
+tad.dixon.sizes$comparison = factor(tad.dixon.sizes$comparison, c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2", "dm3"))
+tad.homer.sizes$comparison = factor(tad.homer.sizes$comparison, c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2", "dm3"))
+beanplot(width~comparison, data=tad.dixon.sizes, log="y", what=c(FALSE, TRUE, FALSE, FALSE))
+
+grb.sizes$comparison = factor(grb.sizes$comparison, c("monDom5", "hg19", "mm9", "galGal4", "lepOcu1",
+                                                      "dm3"))
+beanplot(width~comparison, data=grb.sizes, log="y", what=c(FALSE, TRUE, FALSE, FALSE))
+
+tad.dixon.sizes$set = "TAD"
+grb.sizes$set = "GRB"
+combined = rbind(tad.dixon.sizes, grb.sizes)
+combined = combined[ combined$comparison %in% c("dm3", "lepOcu1", "galGal4", "mm9", "hg19", "monDom5"), ]
+combined$comparison = factor(combined$comparison, c("dm3", "lepOcu1", "galGal4", "mm9", "hg19", "monDom5"))
+combined$set = factor(combined$set, c("TAD", "GRB"))
+
+#combined <- rbind(combined, cbind(expand.grid(comparison=levels(combined$comparison), set="TAD"), width=100000))
+combined$width = as.numeric(combined$width)
+combined.melt = melt(combined)
+ggplot(combined.melt, aes(x=comparison, y=value, fill=set)) + geom_violin(aes(fill=set, drop=FALSE), na.rm=FALSE, width=1, position="dodge") + coord_flip() + scale_y_continuous("Width", trans=scales::log_trans(base=10))  + theme_bw() + scale_fill_manual(values=c("darkorange", "deepskyblue")) + theme_class()
+
+tad.homer.sizes$set = "TAD"
+combined = rbind(tad.homer.sizes, grb.sizes)
+combined = combined[ combined$comparison %in% c("dm3", "lepOcu1", "galGal4", "mm9", "hg19", "monDom5"), ]
+combined$comparison = factor(combined$comparison, c("dm3", "lepOcu1", "galGal4", "mm9", "hg19", "monDom5"))
+combined$set = factor(combined$set, c("TAD", "GRB"))
+
+#combined <- rbind(combined, cbind(expand.grid(comparison=levels(combined$comparison), set="TAD"), width=100000))
+combined$width = as.numeric(combined$width)
+combined.melt = melt(combined)
+ggplot(combined.melt, aes(x=comparison, y=value, fill=set)) + geom_violin(aes(fill=set, drop=FALSE), na.rm=FALSE, width=1, position="dodge") + coord_flip() + scale_y_continuous("Width", trans=scales::log_trans(base=10), breaks=c(1e5,1e6,1e7), labels=c("0.1 Mb", "1 Mb", "10 Mb"))  + theme_bw() + scale_fill_manual(values=c("darkorange", "deepskyblue")) 
+
+qr = function(x){quantile(x, 0.8) - quantile(x, 0.2)}
+
+
+ plot(
+ genome.sizes$width[ genome.sizes$species %in% c("hg19", "mm9", "galGal4", "lepOcu1", "dm3"
+                                                 )], 
+sapply(split(grb.sizes$width, grb.sizes$comparison), IQR) )
+ 
+ 
+  plot(
+ genome.sizes$width[ genome.sizes$species %in% c("hg19", "mm9", "galGal4", "lepOcu1", "dm3"
+                                                 )], 
+sapply(split(grb.sizes$width, grb.sizes$comparison), IQR), pch=18, xlab="Genome size", ylab="IQR", ylim=c(10000, 1.5e6))
+ 
+  points( genome.sizes$width[ 
+  genome.sizes$species %in% c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2", "dm3")], 
+sapply(split(tad.homer.sizes$width, tad.homer.sizes$comparison), IQR), col="red", pch=18)
+ 
+  points( genome.sizes$width[ 
+  genome.sizes$species %in% c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2", "dm3")], 
+sapply(split(tad.dixon.sizes$width, tad.dixon.sizes$comparison), IQR), col="blue", pch=18) 
+  
+for(i in 1:5){
+  print(cor(genome.sizes$width[ genome.sizes$species %in% c("hg19", "mm9", "galGal4", "lepOcu1", "dm3"
+                                                 )][-i], 
+  sapply(split(grb.sizes$width, grb.sizes$comparison), IQR)[-i]))
+}
+
+  for(i in 1:5){
+  print(cor(genome.sizes$width[ genome.sizes$species %in% c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2"
+                                                 )][-i], 
+  sapply(split(tad.homer.sizes$width, tad.homer.sizes$comparison), IQR)[-i][-5]))
+  }
+  
+points( genome.sizes$width[ 
+  genome.sizes$species %in% c("hg19", "mm9", "rheMac3", "canFam3", "oryCun2", "dm3")], 
+sapply(split(tad.homer.sizes$width, tad.homer.sizes$comparison), IQR), col="red")
+ 
+genome.sizes
+```
+
+
+
+```{r}
+galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+ 
+monDom5.grbs= import.bed("data/GRBs/hg19_monDom5_80_50/hg19_monDom5_80_50.final.bed", genome="hg19")
+monDom5.grbs = monDom5.grbs[ seqnames(monDom5.grbs) != "chrY"]
+lepOcu1.grbs = import.bed("data/GRBs/hg19_lepOcu1_70_30/hg19_lepOcu1_70_30.final.bed", genome="hg19")
+lepOcu1.grbs = lepOcu1.grbs[ seqnames(lepOcu1.grbs) != "chrY"]
+
+monDom5.grbs = monDom5.grbs[ countOverlaps(monDom5.grbs, galGal4.grbs) == 1 ] 
+galGal4.grbs = galGal4.grbs[ countOverlaps(galGal4.grbs, monDom5.grbs) == 1 ]
+ 
+   grb_starts <- resize(galGal4.grbs, fix="start", width = 1)
+   grb_ends <- resize(galGal4.grbs, fix="end", width = 1)
+   grb2_starts <- resize(monDom5.grbs, fix="start", width = 1)
+   grb2_ends <- resize(monDom5.grbs, fix="end", width = 1)
+      
+   start_idx <- nearest(grb_starts, grb2_starts)
+   start_dists <- data.frame(grb = 1:length(galGal4.grbs), 
+                         tad_idx = start_idx, 
+                         pos = start(grb2_starts[start_idx]),
+                         dist = start(grb2_starts[start_idx]) - start(grb_starts))
+   end_idx <- nearest(grb_ends, grb2_ends)
+   end_dists <- data.frame(grb = 1:length(galGal4.grbs), 
+                         tad_idx = end_idx, 
+                         pos = start(grb2_ends[end_idx]),
+                         dist = start(grb2_ends[end_idx]) - start(grb_ends))
+   
+   broken = which(end_dists$pos < start_dists$pos)
+   for( i in broken ){
+     if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+       start_dists$tad_idx[i] = end_dists$tad_idx[i]
+       start_dists$pos[i] = start(grb2_starts[start_dists$tad_idx[i]])
+       start_dists$dist[i] = start(grb2_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+     }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+       end_dists$tad_idx[i] = start_dists$tad_idx[i]
+       end_dists$pos[i] = start(grb2_ends[end_dists$tad_idx[i]])
+       end_dists$dist[i] = start(grb2_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+     }
+   }
+ 
+x = 150000 
+sum(abs(start_dists$dist) < x & abs(end_dists$dist) < x ) / nrow(end_dists)
+```
