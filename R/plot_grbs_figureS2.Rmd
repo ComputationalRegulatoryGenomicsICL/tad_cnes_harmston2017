@@ -1,0 +1,109 @@
+---
+title: "plot_grbs_figureS2"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures/',
+               echo=!short, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r}
+library(CNEr)
+library(Gviz)
+library(rtracklayer)
+library(GenomicFeatures)
+library(biomaRt)
+```
+
+```{r, cache=TRUE}
+hg19.ens.db <- loadDb("data/hg19_ensembl.sqlite")
+ens.genes = genes(hg19.ens.db)
+human= useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
+bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ens.genes$gene_id, uniqueRows=TRUE)
+ens.genes$hgnc_symbol = bm.annotations$hgnc_symbol[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$gene_biotype = bm.annotations$gene_biotype[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$description = bm.annotations$description[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$status = bm.annotations$status[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:22, sep=""), "chrX", "chrY")]
+ens.genes = ens.genes[ ens.genes$gene_biotype %in% c( "protein_coding", "miRNA" ) ]
+ens.transcripts = transcriptsBy(hg19.ens.db, by="gene")
+ens.transcripts = ens.transcripts[ names(ens.transcripts) %in% unlist(ens.genes$gene_id) ] 
+```
+
+```{r}
+galGal4.grbs = import.bed("data/grbs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+
+
+grbs.to.plot = data.frame(targets = c( "IRX3", "PROX1",  "LPHN2", "PAX6"),
+                          chromosome = c("chr16", "chr1", "chr1", "chr11"),
+                          start = c(48476700, 212820540, 78652340, 29500000),
+                          end = c(55776880, 222701560, 84766720, 33500000), stringsAsFactors=FALSE)
+
+grbs = GRanges()
+final.galGal4.70.50 = import.bed("data/grbs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed")
+final.galGal4.70.50$id = "galGal4.70.50"
+final.galGal4.80.50 = import.bed("data/grbs/hg19_galGal4_80_50/hg19_galGal4_80_50.final.bed")
+final.galGal4.80.50$id = "galGal4.80.50"
+final.galGal4.90.50 = import.bed("data/grbs/hg19_galGal4_90_50/hg19_galGal4_90_50.final.bed")
+final.galGal4.90.50$id = "galGal4.90.50"
+final.monDom5.80.50 = import.bed("data/grbs/hg19_monDom5_80_50/hg19_monDom5_80_50.final.bed")
+final.monDom5.80.50$id = "monDom5.80.50"
+final.lepOcu1.70.30 = import.bed("data/grbs/hg19_lepOcu1_70_30/hg19_lepOcu1_70_30.final.bed")
+final.lepOcu1.70.30$id = "lepOcu1.70.30"
+grbs = c(final.galGal4.70.50, final.galGal4.80.50, final.galGal4.90.50,
+        final.monDom5.80.50, final.lepOcu1.70.30)  
+
+
+galGal4.70.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_70pc_50col.bigWig")
+galGal4.70.50.density.bw = galGal4.70.50.density.bw[ seqnames(galGal4.70.50.density.bw) %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+galGal4.80.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_80pc_50col.bigWig")
+galGal4.80.50.density.bw = galGal4.80.50.density.bw[ seqnames(galGal4.70.50.density.bw) %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+galGal4.90.50.density.bw = import("data/densities/HCNE_density_hg19_galGal4_90pc_50col.bigWig")
+galGal4.90.50.density.bw = galGal4.90.50.density.bw[ seqnames(galGal4.70.50.density.bw) %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+monDom5.80.50.density.bw = import("data/densities/HCNE_density_hg19_monDom5_80pc_50col.bigWig")
+monDom5.80.50.density.bw = monDom5.80.50.density.bw[ seqnames(monDom5.80.50.density.bw) %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+lepOcu1.70.30.density.bw = import("data/densities/HCNE_density_hg19_LepOcu1_70pc_30col.bigWig")
+lepOcu1.70.30.density.bw = lepOcu1.70.30.density.bw[ seqnames(lepOcu1.70.30.density.bw) %in% c( paste("chr", 1:22, sep=""), "chrX", "chrY"), ]
+
+cne.densities.data = galGal4.70.50.density.bw
+cne.densities.data$galGal4.70.50 = cne.densities.data$score
+cne.densities.data$score = NULL
+cne.densities.data$galGal4.80.50 = galGal4.80.50.density.bw$score
+cne.densities.data$galGal4.90.50 = galGal4.90.50.density.bw$score
+cne.densities.data$monDom5.80.50 = monDom5.80.50.density.bw$score
+cne.densities.data$lepOcu1.70.30 = lepOcu1.70.30.density.bw$score
+
+```
+
+```{r figureS2}
+for(i in 1:nrow(grbs.to.plot)){ 
+  
+  axisTrack <- GenomeAxisTrack()
+  ideoTrack <- IdeogramTrack(genome="hg19", chromosome=grbs.to.plot$chromosome[i])
+  grbTrack = AnnotationTrack(grbs, chromosome = grbs.to.plot$chromosome[i], name="GRBs", groupAnnotation="id")
+
+  geneTrack = AnnotationTrack(ens.genes, genome="hg19", name="Ensembl Genes", id=ifelse(ens.genes$hgnc_symbol=="", " ", ens.genes$hgnc_symbol))
+  displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+
+ cne.densities.data.track <- DataTrack(range = cne.densities.data, genome = "hg19", 
+                                      type = "horizon", chromosome = grbs.to.plot$chromosome[i], 
+                                      name = "densities", groups=c("2", "3", "4", "5", "1"),
+                                      col=c("red", "red", "red", "darkorchid4", "seagreen"), 
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,12),
+                                      horizon.origin=0, horizon.scale=6)
+
+plotTracks(list(ideoTrack, axisTrack, 
+                   cne.densities.data.track, 
+                  grbTrack, geneTrack), collapseTranscripts=TRUE, shape="arrow", chromosome=grbs.to.plot$chromosome[i], from=grbs.to.plot$start[i], to=grbs.to.plot$end[i], sizes=c(0.05,0.05, 0.5, 0.2, 0.2))
+}
+
+```
+
+
+```{r}
+sessionInfo()
+```

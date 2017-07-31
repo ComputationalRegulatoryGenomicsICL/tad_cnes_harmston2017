@@ -17,11 +17,14 @@ All figures and results in the manuscript can be reproduced from the R scripts w
 Script | Main figures | Supplementary figures
 -------| ------------- | -------------
 plot_grbs_figure1.Rmd | Figure 1 | FigureS1
-calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S2
-calculate_grb_tad_overlaps_fly.Rmd | Figure 2 | Figure S2
+plot_grbs_figureS2.Rmd | | Figure S2
+calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S3
+calculate_grb_tad_overlaps_fly.Rmd | Figure 2 | Figure S3
+grbs_h3k27ac.Rmd |  | Figure S4 
+ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 
+plot_grbs_figureS6.Rmd | | Figure S6
 repeat_analysis.Rmd | Figure 4 | 
 chromatin_colour.Rmd | Figure 4 |
 dev_analysis.Rmd | Figure 4 |  
-grbs_h3k27ac.Rmd |  | Figure S2 |
 genome_comparison.Rmd | Figure 5 | 
