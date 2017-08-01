@@ -20,6 +20,7 @@ plot_grbs_figure1.Rmd | Figure 1 | FigureS1
 plot_grbs_figureS2.Rmd | | Figure S2
 calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S3
 calculate_grb_tad_overlaps_fly.Rmd | Figure 2 | Figure S3
+calculate_pvalue_distances.Rmd | | Figure S3
 grbs_h3k27ac.Rmd |  | Figure S4 
 ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 

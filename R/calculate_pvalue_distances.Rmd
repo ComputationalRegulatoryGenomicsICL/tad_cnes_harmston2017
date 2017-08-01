@@ -1,0 +1,280 @@
+---
+title: "Boot"
+output: html_document
+---
+
+```{r}
+
+library(beanplot)
+library(stringr)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(rtracklayer)
+library(marray)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+
+
+setdiff.noreduce = function(x, y){
+  x.split = split(x, rep_len(c(1,2), length.out=length(x)))
+  x.split = lapply(x.split, function(x){ setdiff(x, y, ignore.strand=TRUE)})
+  x = c(x.split[[1]], x.split[[2]])
+  x = x[order(x)]
+  return(x)
+}
+
+
+hesc.homer.tads = import.bed("data/tads/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
+mesenchymal.homer.tads = import.bed("data/tads/homer/hg19/mesenchymal_20kby40k_tads.domains.bed", genome="hg19")
+mesendoderm.homer.tads = import.bed("data/tads/homer/hg19/mesendoderm_20kby40k_tads.domains.bed", genome="hg19")
+neural.homer.tads = import.bed("data/tads/homer/hg19/neural_20kby40k_tads.domains.bed", genome="hg19")
+trophoectoderm.homer.tads = import.bed("data/tads/homer/hg19/trophoectoderm_20kby40k_tads.domains.bed", genome="hg19")
+
+hesc.dixon.tads = import.bed("data/tads/dixon/hg19/h1_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesenchymal.dixon.tads = import.bed("data/tads/dixon/hg19/mesenchymal_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+mesendoderm.dixon.tads = import.bed("data/tads/dixon/hg19/mesendoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+neural.dixon.tads = import.bed("data/tads/dixon/hg19/neural_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+trophoectoderm.dixon.tads = import.bed("data/tads/dixon/hg19/trophoectoderm_all.hg19.20kby40k.all.finaldomaincalls.bed", genome="hg19")
+
+centromere.locations.gr = import.bed("data/hg19_centromere.bed")
+
+hesc.homer.tads = setdiff.noreduce(hesc.homer.tads, centromere.locations.gr)
+mesenchymal.homer.tads = setdiff.noreduce(mesenchymal.homer.tads, centromere.locations.gr)
+mesendoderm.homer.tads = setdiff.noreduce(mesendoderm.homer.tads, centromere.locations.gr)
+neural.homer.tads = setdiff.noreduce(neural.homer.tads, centromere.locations.gr)
+trophoectoderm.homer.tads = setdiff.noreduce(trophoectoderm.homer.tads, centromere.locations.gr)
+
+hesc.dixon.tads= setdiff.noreduce(hesc.dixon.tads, centromere.locations.gr)
+mesenchymal.dixon.tads = setdiff.noreduce(mesenchymal.dixon.tads, centromere.locations.gr)
+mesendoderm.dixon.tads = setdiff.noreduce(mesendoderm.dixon.tads, centromere.locations.gr)
+neural.dixon.tads = setdiff.noreduce(neural.dixon.tads, centromere.locations.gr)
+trophoectoderm.dixon.tads = setdiff.noreduce(trophoectoderm.dixon.tads, centromere.locations.gr)
+```
+
+```{r}
+
+homer.tads = list()
+dixon.tads = list()
+
+for(tad.name in c("H1", "ME", "MS", "NP", "TB")){
+  if(tad.name == "H1"){ homer.tads[[tad.name]] = hesc.homer.tads; dixon.tads[[tad.name]] = hesc.dixon.tads }
+  if(tad.name == "ME"){ homer.tads[[tad.name]] = mesendoderm.homer.tads; dixon.tads[[tad.name]] = mesendoderm.dixon.tads }
+  if(tad.name == "MS"){ homer.tads[[tad.name]] = mesenchymal.homer.tads; dixon.tads[[tad.name]] = mesenchymal.dixon.tads }
+  if(tad.name == "NP"){ homer.tads[[tad.name]] = neural.homer.tads; dixon.tads[[tad.name]] = neural.dixon.tads }
+  if(tad.name == "TB"){ homer.tads[[tad.name]] = trophoectoderm.homer.tads; dixon.tads[[tad.name]] = trophoectoderm.dixon.tads }
+}
+
+null_homer = c()
+null_dixon = c()
+```
+
+
+
+```{r HOMER}
+tad.name = "TB"
+con<-file('data/grbs/hg19_galGal4_70_50/null/grbs_shuffled.bed')
+open(con)
+fn = paste("null_homer_", tad.name, ".txt", sep="")
+for( counter in 1:1e6){
+  x = read.table(con,nrow=817, header=FALSE) #6-th line
+  galGal4.grbs = GRanges(x[,1], IRanges(x[,2], x[,3]), seqinfo = seqinfo(Hsapiens))
+  tads = homer.tads[[tad.name]]
+  tmp.grbs = galGal4.grbs[ countOverlaps(galGal4.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  
+  foo = cbind(start_dists, end_dists)
+  foo$index = counter
+  
+  write.table(foo, file = fn, append = TRUE, quote=FALSE, sep="\t", col.names=FALSE, row.names=FALSE)
+}
+  
+close(con)
+```
+HERE
+```{r dixon}
+  
+tad.name = "TB"
+con<-file('data/grbs/hg19_galGal4_70_50/null/grbs_shuffled.bed')
+open(con)
+fn = paste("null_dixon_", tad.name, ".txt", sep="")
+for( counter in 1:1e6){
+  x = read.table(con,nrow=817, header=FALSE) #6-th line
+  galGal4.grbs = GRanges(x[,1], IRanges(x[,2], x[,3]), seqinfo = seqinfo(Hsapiens))
+  tads = dixon.tads[[tad.name]]
+  tmp.grbs = galGal4.grbs[ countOverlaps(galGal4.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  
+  foo = cbind(start_dists, end_dists)
+  foo$index = counter
+  
+  write.table(foo, file = fn, append = TRUE, quote=FALSE, sep="\t", col.names=FALSE, row.names=FALSE)
+}
+  
+close(con)
+
+
+```
+
+
+
+
+
+```{r}
+
+homer.dm3.tads = import.bed("data/tads/homer/dm3/dEmbryo-hic-TADs.domains.bed")
+dixon.dm3.tads = import.bed("data/tads/dixon/dm3/dEmbryo-all.dm3.10kby20k.all.finaldomaincalls.bed")
+
+library(BSgenome.Dmelanogaster.UCSC.dm3)
+
+con<-file('data/grbs/dm3_droMoj3_96_50/null/grbs_shuffled.bed')
+open(con)
+fn = paste("dm3_null_dixon.txt", sep="")
+for( counter in 1:1e6){
+  x = read.table(con,nrow=317, header=FALSE) #6-th line
+  dm3.droMoj3.grbs = GRanges(x[,1], IRanges(x[,2], x[,3]), seqinfo = seqinfo(Dmelanogaster))
+  tads = dixon.dm3.tads
+  tmp.grbs = dm3.droMoj3.grbs[ countOverlaps(dm3.droMoj3.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  
+  foo = cbind(start_dists, end_dists)
+  foo$index = counter
+  
+  write.table(foo, file = fn, append = TRUE, quote=FALSE, sep="\t", col.names=FALSE, row.names=FALSE)
+}
+  
+close(con)
+
+con<-file('data/grbs/dm3_droMoj3_96_50/null/grbs_shuffled.bed')
+open(con)
+fn = paste("dm3_null_homer.txt", sep="")
+for( counter in 1:1e6){
+  x = read.table(con,nrow=317, header=FALSE) #6-th line
+  dm3.droMoj3.grbs = GRanges(x[,1], IRanges(x[,2], x[,3]), seqinfo = seqinfo(Dmelanogaster))
+  tads = homer.dm3.tads
+  tmp.grbs = dm3.droMoj3.grbs[ countOverlaps(dm3.droMoj3.grbs, tads) > 0 ]
+
+  grb_starts <- resize(tmp.grbs, fix="start", width = 1)
+  grb_ends <- resize(tmp.grbs, fix="end", width = 1)
+  tad_starts <- resize(tads, fix="start", width = 1)
+  tad_ends <- resize(tads, fix="end", width = 1)
+  
+  start_idx <- nearest(grb_starts, tad_starts)
+  start_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = start_idx, 
+                        pos = start(tad_starts[start_idx]),
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+  end_idx <- nearest(grb_ends, tad_ends)
+  end_dists <- data.frame(grb = 1:length(tmp.grbs), 
+                        tad_idx = end_idx, 
+                        pos = start(tad_ends[end_idx]),
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+  broken = which(end_dists$pos < start_dists$pos)
+  for( i in broken ){
+    if(abs(start_dists$dist[i]) > abs(end_dists$dist[i])){
+      start_dists$tad_idx[i] = end_dists$tad_idx[i]
+      start_dists$pos[i] = start(tad_starts[start_dists$tad_idx[i]])
+      start_dists$dist[i] = start(tad_starts[start_dists$tad_idx[i]]) - start(grb_starts[start_dists$grb[i]])
+    }else if(abs(end_dists$dist[i]) > abs(start_dists$dist[i])){
+      end_dists$tad_idx[i] = start_dists$tad_idx[i]
+      end_dists$pos[i] = start(tad_ends[end_dists$tad_idx[i]])
+      end_dists$dist[i] = start(tad_ends[end_dists$tad_idx[i]]) - start(grb_ends[end_dists$grb[i]])
+    }
+  }
+  
+  foo = cbind(start_dists, end_dists)
+  foo$index = counter
+  
+  write.table(foo, file = fn, append = TRUE, quote=FALSE, sep="\t", col.names=FALSE, row.names=FALSE)
+}
+  
+close(con)
+```
+
+
+```{r}
+sessionInfo()
+```
