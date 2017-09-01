@@ -1,0 +1,134 @@
+---
+title: "chromatin_colour"
+author: "Nathan Harmston"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./Figures/',
+               echo=!short, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r}
+library(rtracklayer)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+```
+
+```{r}
+
+figure2bpp = function(x){
+  return (x + theme_bw() +  
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.position="none") )
+}
+```
+
+```{r}
+dm3.droMoj3.grbs = import.bed("data/GRBs/dm3_droMoj3_96_50/dm3_droMoj3_96_50.final.bed", genome="dm3")
+dm3.droMoj3.grbs = dm3.droMoj3.grbs[ order(width(dm3.droMoj3.grbs), decreasing=TRUE)]
+dm3.droMoj3.grbs.resized = resize(dm3.droMoj3.grbs, fix="center", width=1e6)
+binsize= 1000
+bins = IRanges(breakInChunks(1e6, binsize))
+
+Mode <- function(x) {
+  ux <- unique(as.vector(x))
+  ux[which.max(tabulate(match(as.vector(x), ux)))][1]
+}
+
+
+plot.dm3.base = matrix(0, ncol=length(bins), nrow=length(dm3.droMoj3.grbs.resized))
+for(i in 1:length(dm3.droMoj3.grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(dm3.droMoj3.grbs.resized[i]), IRanges(start(dm3.droMoj3.grbs.resized[i])+start(bins), start(dm3.droMoj3.grbs.resized[i])+end(bins)), strand="*" ), dm3.droMoj3.grbs[i])
+    plot.dm3.base[i,unique(queryHits(ol))] = 1
+}
+plot.dm3.base.melt = melt(plot.dm3.base)
+ggplot.dm3.base = figure2bpp(ggplot(plot.dm3.base.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0))
+
+chromatin.colours = import.bed("data/features/dm3/GSE22069_domains.bed")
+chromatin.colours.cov = coverage(chromatin.colours, weight=as.numeric(factor(chromatin.colours$itemRgb)))
+
+plot.dm3.chromatin = matrix(0, ncol=length(bins), nrow=length(dm3.droMoj3.grbs.resized))
+
+binned.grbs = list()
+for(i in 1:length(dm3.droMoj3.grbs)){
+  binned.grbs[[i]] = GRanges(seqnames(dm3.droMoj3.grbs.resized[i]), IRanges(start(dm3.droMoj3.grbs.resized[i])+start(bins), start(dm3.droMoj3.grbs.resized[i])+end(bins)), strand="*" )
+  plot.dm3.chromatin[i, ] = viewApply(Views(chromatin.colours.cov[[as.character(unique(seqnames(dm3.droMoj3.grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(dm3.droMoj3.grbs.resized[i])))]]), FUN=Mode)
+}
+plot.dm3.chromatin.melt = melt(plot.dm3.chromatin)
+plot.dm3.chromatin.melt$value = factor(plot.dm3.chromatin.melt$value, c(0,1,2,3,4,5))
+```
+
+
+```{r figure4B}
+ggplot.dm3.chromatin = figure2bpp(ggplot(plot.dm3.chromatin.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile()) +  scale_fill_manual(breaks=c(0,1,2,3,4,5), values=c("gray40", "#000000", "#0000FF", "#00FF00", "#FF0000", "#FFFF00"))
+
+print(grid.arrange(ggplot.dm3.base, 
+             ggplot.dm3.chromatin,
+             ncol=2))
+```
+
+```{r figure S8D, fig.width=9, fig.height=5}
+generate.plot.matrix.mode = function(norm.cov, regions, size){
+      plot.matrix = matrix(0, ncol=size*3, nrow=length(regions))
+      for( i in 1:length(regions)){
+            	chr = as.character(seqnames(regions[i]))
+            	reg.start = start(regions[i])
+            	reg.end = end(regions[i])
+            	reg.width = width(regions[i])
+              
+            	tmp.cov = norm.cov[[chr]][reg.start:reg.end]
+              bins = IRanges(breakInChunks(reg.end - reg.start, nchunk=100))
+              plot.cov = viewApply(Views(tmp.cov, bins), FUN=Mode)
+              
+              bins = IRanges(breakInChunks(reg.start - (reg.start-reg.width), nchunk=100))
+              bins = GRanges(chr, IRanges((reg.start -reg.width)+start(bins), (reg.start  -reg.width)+end(bins)), strand="*" )
+              plot.cov = c(viewApply(Views(norm.cov[[chr]], as(bins, "RangesList")[[chr]]), FUN=Mode), plot.cov)
+              
+              bins = IRanges(breakInChunks((reg.end+reg.width)-reg.end, nchunk=100))
+              bins = GRanges(chr, IRanges(reg.end+start(bins), reg.end+end(bins)), strand="*" )
+              plot.cov = c(plot.cov, viewApply(Views(norm.cov[[chr]], as(bins, "RangesList")[[chr]]), FUN=Mode))
+              
+              plot.matrix[i,] = plot.cov # spline(1:length(plot.cov), plot.cov, n = size*3)$y
+          }
+      return(plot.matrix)
+}
+
+colours_group_grbs_mat <- generate.plot.matrix.mode(regions = dm3.droMoj3.grbs, norm.cov = chromatin.colours.cov, size = 100)
+
+colours_group_grbs_mat.melt = melt(colours_group_grbs_mat)
+colours_group_grbs_mat.melt$value = factor(colours_group_grbs_mat.melt$value, c(0,1,2,3,4,5))
+
+results = data.frame(Index=c(), "0"=c(), "1"=c(), "2"=c(), "3"=c(), "4"=c(), "5"=c())
+for(X2 in unique(colours_group_grbs_mat.melt$Var2)){
+  
+  tmp = table(colours_group_grbs_mat.melt$value[colours_group_grbs_mat.melt$Var2 == X2])
+  
+  tmp["0"] = tmp["0"] + sum(is.na(colours_group_grbs_mat.melt$value[colours_group_grbs_mat.melt$Var2 == X2]))
+  tmp = tmp / sum(tmp)
+  results = rbind(results, 
+                   data.frame(Index=X2, "0"=as.vector(tmp["0"]), "1"=as.vector(tmp["1"]),
+                              "2"=as.vector(tmp["2"]), "3"=as.vector(tmp["3"]), 
+                              "4"=as.vector(tmp["4"]), "5"=as.vector(tmp["5"]))) 
+}
+
+res.melt = melt(results, id.vars="Index", measure.vars=c("X0", "X1", "X2", "X3", "X4", "X5"))
+ggplot(res.melt, aes(x = Index, y = value, fill = variable)) + geom_bar(stat="identity", width=1) +  scale_fill_manual(breaks=c(0,1,2,3,4,5), values=c("gray40", "#000000", "#0000FF", "#00FF00", "#FF0000", "#FFFF00")) + theme_bw() + scale_x_discrete("Position", expand=c(0,0)) + scale_y_continuous("Percentage", expand=c(0,0)) +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), 
+    panel.background = element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) + geom_vline(xintercept=100, col="white", linetype="dashed") + geom_vline(xintercept=200, col="white", linetype="dashed")
+
+```
+
+```{r}
+sessionInfo()
+```
+
