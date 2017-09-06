@@ -1,0 +1,488 @@
+---
+title: "repeat_analysis"
+author: "Nathan Harmston"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rtracklayer)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+```
+
+
+```{r}
+
+figure2bpp = function(x){
+  return (x + theme_bw() +  
+  theme(axis.text.x=element_blank(), axis.title.y=element_blank(), axis.title.x=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.position="none") )
+}
+
+
+generate.plot.matrix = function(norm.cov, regions, size){
+  plot.matrix = matrix(0, ncol=size*3, nrow=length(regions))
+
+  for( i in 1:length(regions)){
+    #print(i)
+    #get region data
+    chr = as.character(seqnames(regions[i]))
+    reg.start = start(regions[i])
+    reg.end = end(regions[i])
+    reg.width = width(regions[i])
+
+    cov.start <- reg.start-reg.width
+    cov.end <- reg.end+reg.width
+  
+    #in case region is more than chromosome length
+    chr_end <- seqlengths(regions)[chr]
+    cov.start <- max(1,cov.start)
+    cov.end <- min(chr_end, cov.end)
+
+    #get coverage of region and flanking areas
+    plot.cov = norm.cov[[chr]][cov.start:cov.end]
+
+    if (length(plot.cov) < (3*size)){
+      length_diff = (3*size) - length(plot.cov)
+      if ( reg.start-reg.width < 1){
+        plot.cov <- c(rep(0, length_diff), plot.cov)
+      }
+      if (reg.end+reg.width > chr_end){
+        plot.cov <- c(plot.cov, rep(0, length_diff))
+      }
+    }
+    #calculate splines
+    plot.matrix[i,] = spline(1:length(plot.cov), plot.cov, n = size*3)$y
+  }
+  return(plot.matrix)
+}
+
+
+galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+
+hg19.rmsk = read.table("data/features/hg19/hg19.rmsk.gz", stringsAsFactors=TRUE, skip=1, sep="\t")
+hg19.rmsk.gr = GRanges(hg19.rmsk[,1], IRanges(hg19.rmsk[,2], hg19.rmsk[,3]), repName=hg19.rmsk[,5],
+                        repClass=hg19.rmsk[,6], repFamily=hg19.rmsk[,7], seqlengths=seqlengths(Hsapiens))
+hg19.rmsk.sine = reduce(hg19.rmsk.gr[hg19.rmsk.gr$repClass=="SINE"])
+hg19.rmsk.line = reduce(hg19.rmsk.gr[hg19.rmsk.gr$repClass=="LINE"])
+hg19.rmsk.ltr = reduce(hg19.rmsk.gr[hg19.rmsk.gr$repClass=="LTR"])
+hg19.rmsk.dna = reduce(hg19.rmsk.gr[hg19.rmsk.gr$repClass=="DNA"])
+hg19.rmsk.retrotransposon = reduce(hg19.rmsk.gr[hg19.rmsk.gr$repClass %in% c("SINE", "LTR", "LINE", "DNA")])
+
+hesc.homer.tads = readRDS("data/hesc.homer.tads.screened.rds")
+hesc.dixon.tads = readRDS("data/hesc.dixon.tads.screened.rds")
+
+
+hg19.rmsk.line.cov = coverage(hg19.rmsk.line)
+hg19.rmsk.sine.cov = coverage(hg19.rmsk.sine)
+hg19.rmsk.ltr.cov = coverage(hg19.rmsk.ltr)
+hg19.rmsk.dna.cov = coverage(hg19.rmsk.dna)
+hg19.rmsk.retrotransposon.cov = coverage(hg19.rmsk.retrotransposon)
+
+plot.rmsk.sine = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.rmsk.line = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.rmsk.retrotransposon = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.rmsk.ltr = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.rmsk.dna = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+```
+
+```{r}
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.rmsk.sine[i, ] = viewMeans(Views(hg19.rmsk.sine.cov[[as.character(unique(seqnames(grbs.resized[i])))]],                                 as(binned.grbs[[i]], "RangesList")[[as.character(
+unique(seqnames(grbs.resized[i])))]]))
+
+
+      plot.rmsk.line[i, ] = viewMeans(Views(hg19.rmsk.line.cov[[as.character(unique(seqnames(grbs.resized[i])))]],                               as(binned.grbs[[i]], "RangesList")[[as.character(
+unique(seqnames(grbs.resized[i])))]]))
+
+      plot.rmsk.retrotransposon[i, ] = viewMeans(Views(hg19.rmsk.retrotransposon.cov[[as.character(unique(seqnames(grbs.resized[i])))]],                               as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+
+      plot.rmsk.ltr[i, ] = viewMeans(Views(hg19.rmsk.ltr.cov[[as.character(unique(seqnames(grbs.resized[i])))]],                             as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+
+      plot.rmsk.dna[i, ] = viewMeans(Views(hg19.rmsk.dna.cov[[as.character(unique(seqnames(grbs.resized[i])))]],                      as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+
+
+}
+
+
+plot.rmsk.sine.melt = melt(plot.rmsk.sine)
+plot.rmsk.line.melt = melt(plot.rmsk.line)
+plot.rmsk.retrotransposon.melt = melt(plot.rmsk.retrotransposon)
+plot.rmsk.ltr.melt = melt(plot.rmsk.ltr)
+plot.rmsk.dna.melt = melt(plot.rmsk.dna)
+
+
+hist(plot.rmsk.dna.melt$value)
+hist(plot.rmsk.ltr.melt$value)
+hist(plot.rmsk.sine.melt$value)
+hist(plot.rmsk.line.melt$value)
+hist(plot.rmsk.retrotransposon.melt$value)
+
+```
+
+```{r}
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0))
+  
+```
+
+
+```{r figure_sine}
+ggplot.hg19.sine = figure2bpp(ggplot(plot.rmsk.sine.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "purple4")) + scale_x_continuous("", breaks=c(min(plot.rmsk.sine.melt$Var2), (max(plot.rmsk.sine.melt$Var2)-min(plot.rmsk.sine.melt$Var2))/2, max(plot.rmsk.sine.melt$Var2)), labels=c("-4Mb", "0", "4Mb"))
+
+#ggplot.hg19.sine
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.sine,
+             ncol=2))
+```
+
+```{r figure_line}
+ggplot.hg19.line = figure2bpp(ggplot(plot.rmsk.line.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "purple4")) + scale_x_continuous("", breaks=c(min(plot.rmsk.line.melt$Var2), (max(plot.rmsk.line.melt$Var2)-min(plot.rmsk.line.melt$Var2))/2, max(plot.rmsk.line.melt$Var2)), labels=c("-4Mb", "0", "4Mb"))
+
+#ggplot.hg19.sine
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.line,
+             ncol=2))
+```
+
+```{r figure_ltr}
+ggplot.hg19.ltr = figure2bpp(ggplot(plot.rmsk.ltr.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "purple4")) + scale_x_continuous("", breaks=c(min(plot.rmsk.ltr.melt$Var2), (max(plot.rmsk.ltr.melt$Var2)-min(plot.rmsk.ltr.melt$Var2))/2, max(plot.rmsk.ltr.melt$Var2)), labels=c("-4Mb", "0", "4Mb"))
+
+#ggplot.hg19.sine
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.ltr,
+             ncol=2))
+```
+
+```{r figure_dna}
+ggplot.hg19.dna = figure2bpp(ggplot(plot.rmsk.dna.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "purple4")) + scale_x_continuous("", breaks=c(min(plot.rmsk.dna.melt$Var2), (max(plot.rmsk.dna.melt$Var2)-min(plot.rmsk.dna.melt$Var2))/2, max(plot.rmsk.dna.melt$Var2)), labels=c("-4Mb", "0", "4Mb"))
+
+#ggplot.hg19.sine
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.dna,
+             ncol=2))
+```
+
+```{r figure_retrotransposon}
+ggplot.hg19.retrotransposon = figure2bpp(ggplot(plot.rmsk.retrotransposon.melt, aes(x = Var2, y = rev(Var1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "purple4")) + scale_x_continuous("", breaks=c(min(plot.rmsk.retrotransposon.melt$Var2), (max(plot.rmsk.retrotransposon.melt$Var2)-min(plot.rmsk.retrotransposon.melt$Var2))/2, max(plot.rmsk.retrotransposon.melt$Var2)), labels=c("-4Mb", "0", "4Mb")
+)
+
+#ggplot.hg19.sine
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.retrotransposon,
+             ncol=2))
+```
+
+
+
+```{r figureS8B}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base,
+             ggplot.hg19.sine,
+             ggplot.hg19.line,
+             ggplot.hg19.ltr,
+             ggplot.hg19.dna,
+             ggplot.hg19.retrotransposon,
+             ncol=6))
+
+```
+
+```{r sine_meta, cache=TRUE}
+size = 100
+chrs <- names(seqlengths(Hsapiens))[1:24]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Hsapiens)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Hsapiens)))
+})
+seqinfo(hg19.rmsk.sine) = seqinfo(Hsapiens)
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, hg19.rmsk.sine)
+bins <- resize(bins, fix="center", width = 1000)
+sines_per_10kb_cov <- coverage(bins, weight = bins$weights)
+sines_per10kb_grbs_mat <- generate.plot.matrix(regions = galGal4.grbs, norm.cov = sines_per_10kb_cov, size = 100)
+sines_per10kb_tads_mat <- generate.plot.matrix(regions = hesc.homer.tads, norm.cov = sines_per_10kb_cov, size = 100)
+sines_per10kb_unscreenedtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[hesc.homer.tads$class %in% c("GRB", "nonGRB")], norm.cov = sines_per_10kb_cov, size = 100)
+sines_per10kb_devtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="GRB" ], norm.cov = sines_per_10kb_cov, size = 100)
+
+sines_per10kb_normtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="nonGRB" ], norm.cov = sines_per_10kb_cov, size = 100)
+
+```
+
+
+```{r line_meta, cache=TRUE}
+size = 100
+chrs <- names(seqlengths(Hsapiens))[1:24]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Hsapiens)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Hsapiens)))
+})
+
+seqinfo(hg19.rmsk.line) = seqinfo(Hsapiens)
+
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, hg19.rmsk.line)
+bins <- resize(bins, fix="center", width = 1000)
+
+lines_per_10kb_cov <- coverage(bins, weight = bins$weights)
+
+lines_per10kb_grbs_mat <- generate.plot.matrix(regions = galGal4.grbs, norm.cov = lines_per_10kb_cov, size = 100)
+lines_per10kb_tads_mat <- generate.plot.matrix(regions = hesc.homer.tads, norm.cov = lines_per_10kb_cov, size = 100)
+lines_per10kb_unscreenedtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[hesc.homer.tads$class %in% c("GRB", "nonGRB")], norm.cov = lines_per_10kb_cov, size = 100)
+#HERE
+lines_per10kb_devtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="GRB" ], norm.cov = lines_per_10kb_cov, size = 100)
+
+lines_per10kb_normtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="nonGRB" ], norm.cov = lines_per_10kb_cov, size = 100)
+
+```
+
+
+```{r ltr_meta, cache=TRUE}
+size = 100
+chrs <- names(seqlengths(Hsapiens))[1:24]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Hsapiens)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Hsapiens)))
+})
+
+seqinfo(hg19.rmsk.ltr) = seqinfo(Hsapiens)
+
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, hg19.rmsk.ltr)
+bins <- resize(bins, fix="center", width = 1000)
+
+ltrs_per_10kb_cov <- coverage(bins, weight = bins$weights)
+
+ltrs_per10kb_grbs_mat <- generate.plot.matrix(regions = galGal4.grbs, norm.cov = ltrs_per_10kb_cov, size = 100)
+ltrs_per10kb_tads_mat <- generate.plot.matrix(regions = hesc.homer.tads, norm.cov = ltrs_per_10kb_cov, size = 100)
+ltrs_per10kb_unscreenedtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[hesc.homer.tads$class %in% c("GRB", "nonGRB")], norm.cov = ltrs_per_10kb_cov, size = 100)
+ltrs_per10kb_devtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="GRB" ], norm.cov = ltrs_per_10kb_cov, size = 100)
+
+ltrs_per10kb_normtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="nonGRB" ], norm.cov = ltrs_per_10kb_cov, size = 100)
+
+```
+
+
+```{r dna_meta, cache=TRUE}
+size = 100
+chrs <- names(seqlengths(Hsapiens))[1:24]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Hsapiens)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Hsapiens)))
+})
+
+seqinfo(hg19.rmsk.dna) = seqinfo(Hsapiens)
+
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, hg19.rmsk.dna)
+bins <- resize(bins, fix="center", width = 1000)
+
+dnas_per_10kb_cov <- coverage(bins, weight = bins$weights)
+
+dnas_per10kb_grbs_mat <- generate.plot.matrix(regions = galGal4.grbs, norm.cov = dnas_per_10kb_cov, size = 100)
+dnas_per10kb_tads_mat <- generate.plot.matrix(regions = hesc.homer.tads, norm.cov = dnas_per_10kb_cov, size = 100)
+dnas_per10kb_unscreenedtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[hesc.homer.tads$class %in% c("GRB", "nonGRB")], norm.cov = dnas_per_10kb_cov, size = 100)
+#HERE
+dnas_per10kb_devtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="GRB" ], norm.cov = dnas_per_10kb_cov, size = 100)
+
+dnas_per10kb_normtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="nonGRB" ], norm.cov = dnas_per_10kb_cov, size = 100)
+
+```
+
+
+```{r retrotransposon_meta, cache=TRUE}
+size = 100
+chrs <- names(seqlengths(Hsapiens))[1:24]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Hsapiens)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Hsapiens)))
+})
+
+seqinfo(hg19.rmsk.retrotransposon) = seqinfo(Hsapiens)
+
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, hg19.rmsk.retrotransposon)
+bins <- resize(bins, fix="center", width = 1000)
+
+retrotransposons_per_10kb_cov <- coverage(bins, weight = bins$weights)
+
+retrotransposons_per10kb_grbs_mat <- generate.plot.matrix(regions = galGal4.grbs, norm.cov = retrotransposons_per_10kb_cov, size = 100)
+retrotransposons_per10kb_tads_mat <- generate.plot.matrix(regions = hesc.homer.tads, norm.cov = retrotransposons_per_10kb_cov, size = 100)
+retrotransposons_per10kb_unscreenedtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[hesc.homer.tads$class %in% c("GRB", "nonGRB")], norm.cov = retrotransposons_per_10kb_cov, size = 100)
+retrotransposons_per10kb_devtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="GRB" ], norm.cov = retrotransposons_per_10kb_cov, size = 100)
+
+retrotransposons_per10kb_normtads_mat <- generate.plot.matrix(regions = hesc.homer.tads[ hesc.homer.tads$class=="nonGRB" ], norm.cov = retrotransposons_per_10kb_cov, size = 100)
+
+```
+
+
+```{r meta_sine_plot, fig.width=9, fig.height=5}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(sines_per10kb_grbs_mat), f = 1/50), type="l", ylab= "Average SINE density per 10kb",
+    xaxt="n", xlab="", col="#E41A1C", lwd=2, ann=FALSE, ylim=c(4.5, 7))
+axis(side=1, at=c(100,100*2), labels=c("Start", "End"))
+
+lines(lowess(colMeans(sines_per10kb_tads_mat), f = 1/50), type="l", ylab= "Average SINE density per 10kb",
+    xaxt="n", xlab="", col="#377EB8", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(sines_per10kb_devtads_mat), f = 1/50), type="l", ylab= "Average SINE density per 10kb",
+    xaxt="n", xlab="", col="#4DAF4A", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(sines_per10kb_normtads_mat), f = 1/50), type="l", ylab= "Average SINE density per 10kb",
+    xaxt="n", xlab="", col="#984EA3", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(sines_per10kb_unscreenedtads_mat), f = 1/50), type="l", ylab= "Average SINE density per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+
+abline(v=c(100,100*2), col="black", lty=2)
+
+```
+
+
+```{r meta_line_plot, fig.width=9, fig.height=5}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(lines_per10kb_grbs_mat), f = 1/50), type="l", ylab= "Average LINE density per 10kb",
+    xaxt="n", xlab="", col="#E41A1C", lwd=2, ann=FALSE, ylim=c(4.5, 5.5))
+axis(side=1, at=c(100,100*2), labels=c("Start", "End"))
+
+lines(lowess(colMeans(lines_per10kb_tads_mat), f = 1/50), type="l", ylab= "Average LINE density per 10kb",
+    xaxt="n", xlab="", col="#377EB8", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(lines_per10kb_devtads_mat), f = 1/50), type="l", ylab= "Average LINE density per 10kb",
+    xaxt="n", xlab="", col="#4DAF4A", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(lines_per10kb_normtads_mat), f = 1/50), type="l", ylab= "Average LINE density per 10kb",
+    xaxt="n", xlab="", col="#984EA3", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(lines_per10kb_unscreenedtads_mat), f = 1/50), type="l", ylab= "Average LINE density per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+
+abline(v=c(100,100*2), col="black", lty=2)
+
+```
+
+```{r meta_ltr_plot, fig.width=9, fig.height=5}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(ltrs_per10kb_grbs_mat), f = 1/50), type="l", ylab= "Average LTR density per 10kb",
+    xaxt="n", xlab="", col="#E41A1C", lwd=2, ann=FALSE, ylim=c(1, 3))
+axis(side=1, at=c(100,100*2), labels=c("Start", "End"))
+
+lines(lowess(colMeans(ltrs_per10kb_tads_mat), f = 1/50), type="l", ylab= "Average LTR density per 10kb",
+    xaxt="n", xlab="", col="#377EB8", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(ltrs_per10kb_devtads_mat), f = 1/50), type="l", ylab= "Average LTR density per 10kb",
+    xaxt="n", xlab="", col="#4DAF4A", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(ltrs_per10kb_normtads_mat), f = 1/50), type="l", ylab= "Average LTR density per 10kb",
+    xaxt="n", xlab="", col="#984EA3", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(ltrs_per10kb_unscreenedtads_mat), f = 1/50), type="l", ylab= "Average LTR density per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+
+abline(v=c(100,100*2), col="black", lty=2)
+
+```
+
+
+```{r meta_dna_plot, fig.width=9, fig.height=5}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(dnas_per10kb_grbs_mat), f = 1/50), type="l", ylab= "Average DNA density per 10kb",
+    xaxt="n", xlab="", col="#E41A1C", lwd=2, ann=FALSE, ylim=c(1, 2))
+axis(side=1, at=c(100,100*2), labels=c("Start", "End"))
+
+lines(lowess(colMeans(dnas_per10kb_tads_mat), f = 1/50), type="l", ylab= "Average DNA density per 10kb",
+    xaxt="n", xlab="", col="#377EB8", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(dnas_per10kb_devtads_mat), f = 1/50), type="l", ylab= "Average DNA density per 10kb",
+    xaxt="n", xlab="", col="#4DAF4A", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(dnas_per10kb_normtads_mat), f = 1/50), type="l", ylab= "Average DNA density per 10kb",
+    xaxt="n", xlab="", col="#984EA3", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(dnas_per10kb_unscreenedtads_mat), f = 1/50), type="l", ylab= "Average DNA density per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+
+abline(v=c(100,100*2), col="black", lty=2)
+
+```
+
+
+
+```{r meta_retrotransposons_plot, fig.width=9, fig.height=5}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(retrotransposons_per10kb_grbs_mat), f = 1/50), type="l", ylab= "Average Retrotransposon density per 10kb",
+    xaxt="n", xlab="", col="#E41A1C", lwd=2, ann=FALSE, ylim=c(11, 13))
+axis(side=1, at=c(100,100*2), labels=c("Start", "End"))
+
+lines(lowess(colMeans(retrotransposons_per10kb_tads_mat), f = 1/50), type="l", ylab= "Average Retrotransposon density per 10kb",
+    xaxt="n", xlab="", col="#377EB8", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(retrotransposons_per10kb_devtads_mat), f = 1/50), type="l", ylab= "Average Retrotransposon density per 10kb",
+    xaxt="n", xlab="", col="#4DAF4A", lwd=2, ann=FALSE)
+
+lines(lowess(colMeans(retrotransposons_per10kb_normtads_mat), f = 1/50), type="l", ylab= "Average Retrotransposon density per 10kb",
+    xaxt="n", xlab="", col="#984EA3", lwd=2, ann=FALSE)
+
+#lines(lowess(colMeans(retrotransposons_per10kb_unscreenedtads_mat), f = 1/50), type="l", ylab= "Average Retrotransposon density per 10kb", xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+
+abline(v=c(100,100*2), col="black", lty=2)
+
+```
+
+
+
+
+
+
+```{r}
+sessionInfo()
+```
