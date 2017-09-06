@@ -25,7 +25,8 @@ grbs_h3k27ac.Rmd |  | Figure S4
 ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 
 plot_grbs_figureS6.Rmd | | Figure S6
-repeat_analysis.Rmd | Figure 4 | 
-chromatin_colour.Rmd | Figure 4 |
-dev_analysis.Rmd | Figure 4 |  
+repeat_analysis.Rmd | Figure 4 | Figure S8
+chromatin_colour.Rmd | Figure 4 | Figure S8
+ctcf_analysis.Rmd | Figure 4 | Figure S8
+dev_analysis.Rmd | Figure 4 |  Figure S9
 genome_comparison.Rmd | Figure 5 | 
