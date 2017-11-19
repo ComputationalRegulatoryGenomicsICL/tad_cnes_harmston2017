@@ -21,13 +21,14 @@ plot_grbs_figureS2.Rmd | | Figure S2
 calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S3
 calculate_grb_tad_overlaps_fly.Rmd | Figure 2 | Figure S3
 calculate_pvalue_distances.Rmd | | Figure S3
-grbs_h3k27ac.Rmd |  | Figure S4 
+plot_grbs_h3k27ac.Rmd |  | Figure S4 
 ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 
 plot_grbs_figureS6.Rmd | | Figure S6
 process_fourc_figureS7.Rmd | | Figure S7a | processing of 4C data 
 plot_fourc_figureS7.Rmd | | Figure S7a | plotting of 4C data -depends on process_fourc_figureS7.Rmd
 plot_spsix_figureS7.Rmd | | Figure S7b
+classify_dev_nondev.Rmd | | | classify identified TADs as dev / non-dev depending on their overlap with CNE density
 repeat_analysis.Rmd | Figure 4 | Figure S8
 chromatin_colour.Rmd | Figure 4 | Figure S8
 ctcf_analysis.Rmd | Figure 4 | Figure S8

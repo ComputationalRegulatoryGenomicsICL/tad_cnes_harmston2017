@@ -1,0 +1,553 @@
+---
+title: "grbs_h3k27ac"
+author: "Nathan Harmston"
+date: "23 January 2017"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figures/', dpi=300,
+               echo=TRUE, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+
+```{r echo=FALSE}
+library(beanplot)
+library(stringr)
+library(reshape2)
+library(gridExtra)
+library(beanplot)
+library(plotrix)
+library(gridExtra)
+library(rtracklayer)
+library(Gviz)
+library(BSgenome.Mmusculus.UCSC.mm9)
+library(BSgenome.Hsapiens.UCSC.hg19)
+library(marray)
+library(GenomicRanges)
+library(biomaRt)
+library(GenomicFeatures)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+
+
+figure2bpp = function(x){
+  return (x + theme_bw() +  
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), legend.position="none",
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(),
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+}
+
+
+figure2cpp = function(x){
+  return(x + theme_bw() + scale_x_continuous(expand=c(0,0)) + 
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(), line = element_blank(), panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.position="none",
+        plot.margin=grid::unit(c(0.2,0.2,0.2,0.2), "cm")) )
+} 
+```
+
+```{r cache=TRUE}
+
+hg19.ens.db = loadDb("data/hg19_ensembl.sqlite")
+ens.genes = genes(hg19.ens.db)
+human = useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
+bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ens.genes$gene_id, uniqueRows=TRUE)
+ens.genes$hgnc_symbol = bm.annotations$hgnc_symbol[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$gene_biotype = bm.annotations$gene_biotype[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$description = bm.annotations$description[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$status = bm.annotations$status[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:22, sep=""), "chrX", "chrY")]
+ens.genes = ens.genes[ ens.genes$gene_biotype %in% c( "protein_coding", "miRNA" ) ]
+
+```
+
+
+FOO
+============
+
+```{r}
+galGal4.grbs = import.bed("data/grbs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
+galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
+grbs.resized = resize(galGal4.grbs, fix="center", width=8e6)
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+
+plot.base = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+for(i in 1:length(grbs.resized)){
+    ol = findOverlaps(GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" ), galGal4.grbs[i])
+    plot.base[i,unique(queryHits(ol))] = 1
+}
+
+plot.base.melt = melt(plot.base)
+ggplot.hg19.galGal4.plot.base = figure2bpp(ggplot(plot.base.melt, aes(x = X2, y = rev(X1), fill = value)) + geom_tile() +  scale_fill_gradient2(low = "white", high = "gray50", midpoint = 0)) + scale_x_continuous("", breaks=c(min(plot.base.melt$X2), (max(plot.base.melt$X2)-min(plot.base.melt$X2))/2, max(plot.base.melt$X2)), labels=c("-4Mb", "0", "4Mb"))
+
+```
+
+
+
+```{r}
+library(rtracklayer)
+library(GenomicAlignments)
+
+h3k27ac.h1.bdg = readRDS("data/H3K27ac/h3k27ac.h1.bdg.rds")
+h3k27ac.me.bdg = readRDS("data/H3K27ac/h3k27ac.me.bdg.rds")
+h3k27ac.ms.bdg = readRDS("data/H3K27ac/h3k27ac.ms.bdg.rds")
+h3k27ac.np.bdg = readRDS("data/H3K27ac/h3k27ac.np.bdg.rds")
+h3k27ac.tb.bdg = readRDS("data/H3K27ac/h3k27ac.tb.bdg.rds")
+```
+
+```{r}
+h3k27ac.h1.peaks = read.delim("data/h3k27ac/h1_rep2_rep3_peaks.narrowPeak.gz", header=FALSE)
+h3k27ac.h1.peaks = GRanges(h3k27ac.h1.peaks[,1], IRanges(h3k27ac.h1.peaks[,2], h3k27ac.h1.peaks[,3]))
+h3k27ac.me.peaks = read.delim("data/h3k27ac/me_rep2_rep2_peaks.narrowPeak.gz", header=FALSE)
+h3k27ac.me.peaks = GRanges(h3k27ac.me.peaks[,1], IRanges(h3k27ac.me.peaks[,2], h3k27ac.me.peaks[,3]))
+h3k27ac.ms.peaks = read.delim("data/h3k27ac/ms_rep2_rep1_peaks.narrowPeak.gz", header=FALSE)
+h3k27ac.ms.peaks = GRanges(h3k27ac.ms.peaks[,1], IRanges(h3k27ac.ms.peaks[,2], h3k27ac.ms.peaks[,3]))
+h3k27ac.np.peaks = read.delim("data/h3k27ac/np_rep3_rep2_peaks.narrowPeak.gz", header=FALSE)
+h3k27ac.np.peaks = GRanges(h3k27ac.np.peaks[,1], IRanges(h3k27ac.np.peaks[,2], h3k27ac.np.peaks[,3]))
+h3k27ac.tb.peaks = read.delim("data/h3k27ac/tb_rep3_rep2_peaks.narrowPeak.gz", header=FALSE)
+h3k27ac.tb.peaks = GRanges(h3k27ac.tb.peaks[,1], IRanges(h3k27ac.tb.peaks[,2], h3k27ac.tb.peaks[,3]))
+```
+
+```{r}
+hist(log2(h3k27ac.h1.bdg$score+1))
+hist(log2(h3k27ac.me.bdg$score+1))
+hist(log2(h3k27ac.ms.bdg$score+1))
+hist(log2(h3k27ac.np.bdg$score+1))
+hist(log2(h3k27ac.tb.bdg$score+1))
+```
+
+```{r eval=FALSE}
+
+h3k27ac.h1.cov = coverage(h3k27ac.h1.bdg, weight=log2(h3k27ac.h1.bdg$score+1))
+h3k27ac.me.cov = coverage(h3k27ac.me.bdg, weight=log2(h3k27ac.me.bdg$score+1))
+h3k27ac.ms.cov = coverage(h3k27ac.ms.bdg, weight=log2(h3k27ac.ms.bdg$score+1))
+h3k27ac.np.cov = coverage(h3k27ac.np.bdg, weight=log2(h3k27ac.np.bdg$score+1))
+h3k27ac.tb.cov = coverage(h3k27ac.tb.bdg, weight=log2(h3k27ac.tb.bdg$score+1))
+
+```
+
+```{r eval=FALSE}
+h3k27ac.h1.peaks.cov = coverage(h3k27ac.h1.peaks)
+h3k27ac.me.peaks.cov = coverage(h3k27ac.me.peaks)
+h3k27ac.ms.peaks.cov = coverage(h3k27ac.ms.peaks)
+h3k27ac.np.peaks.cov = coverage(h3k27ac.np.peaks)
+h3k27ac.tb.peaks.cov = coverage(h3k27ac.tb.peaks)
+
+```
+
+```{r eval=FALSE}
+plot.h3k27ac.h1 = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+ploth3k27ac.me = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.ms = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.np = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.tb = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.h3k27ac.h1[i, ] = viewMaxs(Views(h3k27ac.h1.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      ploth3k27ac.me[i, ] = viewMaxs(Views(h3k27ac.me.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.ms[i, ] = viewMaxs(Views(h3k27ac.ms.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.np[i, ] = viewMaxs(Views(h3k27ac.np.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.tb[i, ] = viewMaxs(Views(h3k27ac.tb.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+
+```
+
+
+```{r eval=FALSE}
+plot.h3k27acp.h1 = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.me = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.ms = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.np = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.tb = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.h3k27acp.h1[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.h1.peaks)
+      plot.h3k27acp.me[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.me.peaks)
+      plot.h3k27acp.ms[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.ms.peaks)
+      plot.h3k27acp.np[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.np.peaks)
+      plot.h3k27acp.tb[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.tb.peaks)
+}
+```
+
+```{r eval=FALSE}
+
+plot.h1.enhancer.melt = melt(plot.h3k27ac.h1)
+plot.me.enhancer.melt = melt(ploth3k27ac.me)
+plot.ms.enhancer.melt = melt(plot.h3k27ac.ms)
+plot.np.enhancer.melt = melt(plot.h3k27ac.np)
+plot.tb.enhancer.melt = melt(plot.h3k27ac.tb)
+
+plot.h1.enhancer.melt$value = ifelse(plot.h1.enhancer.melt$value>2, 2, plot.h1.enhancer.melt$value)
+ggplot.h1.enhancer = figure2cpp(ggplot(plot.h1.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,2), low = "white", high = "red"))
+
+plot.me.enhancer.melt$value = ifelse(plot.me.enhancer.melt$value>2, 2, plot.me.enhancer.melt$value)
+ggplot.me.enhancer = figure2cpp(ggplot(plot.me.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,2), low = "white", high = "red"))
+
+plot.ms.enhancer.melt$value = ifelse(plot.ms.enhancer.melt$value>2, 2, plot.ms.enhancer.melt$value)
+ggplot.ms.enhancer = figure2cpp(ggplot(plot.ms.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,2), low = "white", high = "red"))
+
+plot.np.enhancer.melt$value = ifelse(plot.np.enhancer.melt$value>2, 2, plot.np.enhancer.melt$value)
+ggplot.np.enhancer = figure2cpp(ggplot(plot.np.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,2), low = "white", high = "red"))
+
+plot.tb.enhancer.melt$value = ifelse(plot.tb.enhancer.melt$value>2, 2, plot.tb.enhancer.melt$value)
+ggplot.tb.enhancer = figure2cpp(ggplot(plot.tb.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,2), low = "white", high = "red"))
+
+```
+
+```{r eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ncol=2))
+```
+
+
+```{r eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.me.enhancer,
+             ncol=2))
+```
+
+
+
+```{r eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.ms.enhancer,
+             ncol=2))
+```
+
+
+
+```{r eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.np.enhancer,
+             ncol=2))
+```
+
+
+
+```{r eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.tb.enhancer,
+             ncol=2))
+```
+
+
+
+
+```{r promoters, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ggplot.me.enhancer,
+             ggplot.ms.enhancer,
+             ggplot.np.enhancer,
+             ggplot.tb.enhancer,
+             ncol=6))
+```
+
+
+```{r eval=FALSE}
+plot.h1.enhancer.melt = melt(plot.h3k27acp.h1)
+plot.me.enhancer.melt = melt(plot.h3k27acp.me)
+plot.ms.enhancer.melt = melt(plot.h3k27acp.ms)
+plot.np.enhancer.melt = melt(plot.h3k27acp.np)
+plot.tb.enhancer.melt = melt(plot.h3k27acp.tb)
+
+plot.h1.enhancer.melt$value = ifelse(plot.h1.enhancer.melt$value>5, 5, plot.h1.enhancer.melt$value)
+ggplot.h1.enhancer = figure2cpp(ggplot(plot.h1.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(low = "white", high = "red"))
+
+plot.me.enhancer.melt$value = ifelse(plot.me.enhancer.melt$value>5, 5, plot.me.enhancer.melt$value)
+ggplot.me.enhancer = figure2cpp(ggplot(plot.me.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(low = "white", high = "red"))
+
+plot.ms.enhancer.melt$value = ifelse(plot.ms.enhancer.melt$value>5, 5, plot.ms.enhancer.melt$value)
+ggplot.ms.enhancer = figure2cpp(ggplot(plot.ms.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(low = "white", high = "red"))
+
+plot.np.enhancer.melt$value = ifelse(plot.np.enhancer.melt$value>5, 5, plot.np.enhancer.melt$value)
+ggplot.np.enhancer = figure2cpp(ggplot(plot.np.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(low = "white", high = "red"))
+
+plot.tb.enhancer.melt$value = ifelse(plot.tb.enhancer.melt$value>5, 5, plot.tb.enhancer.melt$value)
+ggplot.tb.enhancer = figure2cpp(ggplot(plot.tb.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(low = "white", high = "red"))
+
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ncol=2))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.me.enhancer,
+             ncol=2))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.ms.enhancer,
+             ncol=2))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.np.enhancer,
+             ncol=2))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.tb.enhancer,
+             ncol=2))
+
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ggplot.me.enhancer,
+             ggplot.ms.enhancer,
+             ggplot.np.enhancer,
+             ggplot.tb.enhancer,
+             ncol=6))
+```
+
+```{r, eval=FALSE}
+
+promoters = promoters(ens.genes, 2500, 2500)
+h3k27ac.h1.bdg[queryHits(findOverlaps(h3k27ac.h1.bdg, promoters))]$score = 0
+h3k27ac.me.bdg[queryHits(findOverlaps(h3k27ac.me.bdg, promoters))]$score = 0
+h3k27ac.ms.bdg[queryHits(findOverlaps(h3k27ac.ms.bdg, promoters))]$score = 0
+h3k27ac.np.bdg[queryHits(findOverlaps(h3k27ac.np.bdg, promoters))]$score = 0
+h3k27ac.tb.bdg[queryHits(findOverlaps(h3k27ac.tb.bdg, promoters))]$score = 0
+
+h3k27ac.h1.cov = coverage(h3k27ac.h1.bdg, weight=h3k27ac.h1.bdg$score)
+h3k27ac.me.cov = coverage(h3k27ac.me.bdg, weight=h3k27ac.me.bdg$score)
+h3k27ac.ms.cov = coverage(h3k27ac.ms.bdg, weight=h3k27ac.ms.bdg$score)
+h3k27ac.np.cov = coverage(h3k27ac.np.bdg, weight=h3k27ac.np.bdg$score)
+h3k27ac.tb.cov = coverage(h3k27ac.tb.bdg, weight=h3k27ac.tb.bdg$score)
+```
+
+
+```{r, cache=TRUE}
+plot.h3k27ac.h1 = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+ploth3k27ac.me = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.ms = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.np = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27ac.tb = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.h3k27ac.h1[i, ] = viewMaxs(Views(h3k27ac.h1.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                       					            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      ploth3k27ac.me[i, ] = viewMaxs(Views(h3k27ac.me.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.ms[i, ] = viewMaxs(Views(h3k27ac.ms.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.np[i, ] = viewMaxs(Views(h3k27ac.np.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                         				            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+      plot.h3k27ac.tb[i, ] = viewMaxs(Views(h3k27ac.tb.cov[[as.character(unique(seqnames(grbs.resized[i])))]], 
+                           			            as(binned.grbs[[i]], "RangesList")[[as.character(unique(seqnames(grbs.resized[i])))]]))
+}
+
+
+```
+
+```{r, eval=FALSE}
+
+plot.h1.enhancer.melt = melt(plot.h3k27ac.h1)
+plot.me.enhancer.melt = melt(ploth3k27ac.me)
+plot.ms.enhancer.melt = melt(plot.h3k27ac.ms)
+plot.np.enhancer.melt = melt(plot.h3k27ac.np)
+plot.tb.enhancer.melt = melt(plot.h3k27ac.tb)
+
+plot.h1.enhancer.melt$value = ifelse(plot.h1.enhancer.melt$value>10, 10, plot.h1.enhancer.melt$value)
+ggplot.h1.enhancer = figure2cpp(ggplot(plot.h1.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,10), low = "white", high = "red"))
+
+plot.me.enhancer.melt$value = ifelse(plot.me.enhancer.melt$value>10, 10, plot.me.enhancer.melt$value)
+ggplot.me.enhancer = figure2cpp(ggplot(plot.me.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,10), low = "white", high = "red"))
+
+plot.ms.enhancer.melt$value = ifelse(plot.ms.enhancer.melt$value>10, 10, plot.ms.enhancer.melt$value)
+ggplot.ms.enhancer = figure2cpp(ggplot(plot.ms.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,10), low = "white", high = "red"))
+
+plot.np.enhancer.melt$value = ifelse(plot.np.enhancer.melt$value>10, 10, plot.np.enhancer.melt$value)
+ggplot.np.enhancer = figure2cpp(ggplot(plot.np.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,10), low = "white", high = "red"))
+
+plot.tb.enhancer.melt$value = ifelse(plot.tb.enhancer.melt$value>10, 10, plot.tb.enhancer.melt$value)
+ggplot.tb.enhancer = figure2cpp(ggplot(plot.tb.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,10), low = "white", high = "red"))
+
+```
+
+```{r, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ncol=2))
+```
+
+
+```{r, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.me.enhancer,
+             ncol=2))
+```
+
+
+
+```{r, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.ms.enhancer,
+             ncol=2))
+```
+
+
+
+```{r, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.np.enhancer,
+             ncol=2))
+```
+
+
+
+```{r, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.tb.enhancer,
+             ncol=2))
+```
+
+
+
+
+```{r h3k27ac_nopromoters, eval=FALSE}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ggplot.me.enhancer,
+             ggplot.ms.enhancer,
+             ggplot.np.enhancer,
+             ggplot.tb.enhancer,
+             ncol=6))
+```
+
+
+```{r}
+promoters = promoters(ens.genes, 2500, 2500)
+h3k27ac.h1.peaks = h3k27ac.h1.peaks[-queryHits(findOverlaps(h3k27ac.h1.peaks, ens.genes))]
+h3k27ac.me.peaks = h3k27ac.h1.peaks[-queryHits(findOverlaps(h3k27ac.me.peaks, ens.genes))]
+h3k27ac.ms.peaks = h3k27ac.h1.peaks[-queryHits(findOverlaps(h3k27ac.ms.peaks, ens.genes))]
+h3k27ac.np.peaks = h3k27ac.h1.peaks[-queryHits(findOverlaps(h3k27ac.np.peaks, ens.genes))]
+h3k27ac.tb.peaks = h3k27ac.h1.peaks[-queryHits(findOverlaps(h3k27ac.tb.peaks, ens.genes))]
+
+h3k27ac.h1.peaks.cov = coverage(h3k27ac.h1.peaks)
+h3k27ac.me.peaks.cov = coverage(h3k27ac.me.peaks)
+h3k27ac.ms.peaks.cov = coverage(h3k27ac.ms.peaks)
+h3k27ac.np.peaks.cov = coverage(h3k27ac.np.peaks)
+h3k27ac.tb.peaks.cov = coverage(h3k27ac.tb.peaks)
+
+binsize= 5000
+bins = IRanges(breakInChunks(8e6, binsize))
+
+plot.h3k27acp.h1 = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.me = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.ms = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.np = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+plot.h3k27acp.tb = matrix(0, ncol=length(bins), nrow=length(grbs.resized))
+
+
+binned.grbs = list()
+for(i in 1:length(galGal4.grbs)){
+      binned.grbs[[i]] = GRanges(seqnames(grbs.resized[i]), IRanges(start(grbs.resized[i])+start(bins), start(grbs.resized[i])+end(bins)), strand="*" )
+      plot.h3k27acp.h1[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.h1.peaks)
+      plot.h3k27acp.me[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.me.peaks)
+      plot.h3k27acp.ms[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.ms.peaks)
+      plot.h3k27acp.np[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.np.peaks)
+      plot.h3k27acp.tb[i, ] = countOverlaps(binned.grbs[[i]], h3k27ac.tb.peaks)
+}
+```
+
+
+```{r}
+#plot.h3k27acp.h1 = do.call(rbind, apply(plot.h3k27acp.h1, 1, spline)$y)
+#plot.h3k27acp.me = do.call(rbind, apply(apply(plot.h3k27acp.me, 1, spline)$y, 1, )
+#plot.h3k27acp.ms = do.call(rbind, loess(plot.h3k27acp.ms)$y)
+#plot.h3k27acp.np = do.call(rbind, loess(plot.h3k27acp.np)$y)
+#plot.h3k27acp.tb = do.call(rbind, loess(plot.h3k27acp.tb)$y)
+
+plot.h1.enhancer.melt = melt(plot.h3k27acp.h1)
+plot.me.enhancer.melt = melt(plot.h3k27acp.me)
+plot.ms.enhancer.melt = melt(plot.h3k27acp.ms)
+plot.np.enhancer.melt = melt(plot.h3k27acp.np)
+plot.tb.enhancer.melt = melt(plot.h3k27acp.tb)
+
+plot.h1.enhancer.melt$value = ifelse(plot.h1.enhancer.melt$value>1, 1, plot.h1.enhancer.melt$value)
+ggplot.h1.enhancer = figure2cpp(ggplot(plot.h1.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,1), low = "white", high = "red"))
+
+plot.me.enhancer.melt$value = ifelse(plot.me.enhancer.melt$value>1, 1, plot.me.enhancer.melt$value)
+ggplot.me.enhancer = figure2cpp(ggplot(plot.me.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,1), low = "white", high = "red"))
+
+plot.ms.enhancer.melt$value = ifelse(plot.ms.enhancer.melt$value>1, 1, plot.ms.enhancer.melt$value)
+ggplot.ms.enhancer = figure2cpp(ggplot(plot.ms.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,1), low = "white", high = "red"))
+
+plot.np.enhancer.melt$value = ifelse(plot.np.enhancer.melt$value>1, 1, plot.np.enhancer.melt$value)
+ggplot.np.enhancer = figure2cpp(ggplot(plot.np.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,1), low = "white", high = "red"))
+
+plot.tb.enhancer.melt$value = ifelse(plot.tb.enhancer.melt$value>1, 1, plot.tb.enhancer.melt$value)
+ggplot.tb.enhancer = figure2cpp(ggplot(plot.tb.enhancer.melt, aes(x = X2, y = rev(X1), fill = value))  + geom_tile() + scale_fill_gradient2(limits=c(0,1), low = "white", high = "red"))
+
+```
+
+```{r}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ncol=2))
+```
+
+
+```{r}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.me.enhancer,
+             ncol=2))
+```
+
+
+
+```{r}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.ms.enhancer,
+             ncol=2))
+```
+
+
+
+```{r}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.np.enhancer,
+             ncol=2))
+```
+
+
+
+```{r}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.tb.enhancer,
+             ncol=2))
+```
+
+
+
+
+```{r h3k27ac_peaks_nopromoters}
+print(grid.arrange(ggplot.hg19.galGal4.plot.base, 
+             ggplot.h1.enhancer,
+             ggplot.me.enhancer,
+             ggplot.ms.enhancer,
+             ggplot.np.enhancer,
+             ggplot.tb.enhancer,
+             ncol=6))
+```
