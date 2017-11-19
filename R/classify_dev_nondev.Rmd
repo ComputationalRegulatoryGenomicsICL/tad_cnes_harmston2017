@@ -76,11 +76,11 @@ setdiff.noreduce = function(x, y){
 
 Load oall of the relevant data.
 ```{r}
-galGal4.grbs = import.bed("data/GRBs/hg19_galGal4_70_50/hg19_galGal4_70_50.final.bed", genome="hg19")
+galGal4.grbs = import.bed("data/grbs/hg19_galGal4_90_50/hg19_galGal4_90_50.final.bed", genome="hg19")
 galGal4.grbs = galGal4.grbs[ seqnames(galGal4.grbs) != "chrY"]
 galGal4.grbs = galGal4.grbs[ order(width(galGal4.grbs), decreasing=TRUE)]
 
-hesc.homer.tads = import.bed("data/TADs/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
+hesc.homer.tads = import.bed("data/tads/homer/hg19/h1_20kby40k_tads.domains.bed", genome="hg19")
 mesenchymal.homer.tads = import.bed("data/TADs/homer/hg19/mesenchymal_20kby40k_tads.domains.bed", genome="hg19")
 mesendoderm.homer.tads = import.bed("data/TADs/homer/hg19/mesendoderm_20kby40k_tads.domains.bed", genome="hg19")
 neural.homer.tads = import.bed("data/TADs/homer/hg19/neural_20kby40k_tads.domains.bed", genome="hg19")
@@ -128,6 +128,49 @@ trophoectoderm.dixon.tads = screen.grbs(trophoectoderm.dixon.tads, galGal4.grbs)
 
 
 ```{r}
+export.bed(hesc.homer.tads, "data/hesc_homer_tads.bed")
+export.bed(hesc.homer.tads[hesc.homer.tads$class == "GRB"], "data/hesc_homer_grb_tads.bed")
+export.bed(hesc.homer.tads[hesc.homer.tads$class == "nonGRB"], "data/hesc_homer_nongrb_tads.bed")
+
+export.bed(mesenchymal.homer.tads, "data/mesenchymal_homer_tads.bed")
+export.bed(mesenchymal.homer.tads[mesenchymal.homer.tads$class == "GRB"], "data/mesenchymal_homer_grb_tads.bed")
+export.bed(mesenchymal.homer.tads[mesenchymal.homer.tads$class == "nonGRB"], "data/mesenchymal_homer_nongrb_tads.bed")
+
+export.bed(mesendoderm.homer.tads, "data/mesendoderm_homer_tads.bed")
+export.bed(mesendoderm.homer.tads[mesendoderm.homer.tads$class == "GRB"], "data/mesendoderm_homer_grb_tads.bed")
+export.bed(mesendoderm.homer.tads[mesendoderm.homer.tads$class == "nonGRB"], "data/mesendoderm_homer_nongrb_tads.bed")
+
+export.bed(neural.homer.tads, "data/neural_homer_tads.bed")
+export.bed(neural.homer.tads[neural.homer.tads$class == "GRB"], "data/neural_homer_grb_tads.bed")
+export.bed(neural.homer.tads[neural.homer.tads$class == "nonGRB"], "data/neural_homer_nongrb_tads.bed")
+
+export.bed(trophoectoderm.homer.tads, "data/trophoectoderm_homer_tads.bed")
+export.bed(trophoectoderm.homer.tads[trophoectoderm.homer.tads$class == "GRB"], "data/trophoectoderm_homer_grb_tads.bed")
+export.bed(trophoectoderm.homer.tads[trophoectoderm.homer.tads$class == "nonGRB"], "data/trophoectoderm_homer_nongrb_tads.bed")
+
+
+export.bed(hesc.dixon.tads, "data/hesc_dixon_tads.bed")
+export.bed(hesc.dixon.tads[hesc.dixon.tads$class == "GRB"], "data/hesc_dixon_grb_tads.bed")
+export.bed(hesc.dixon.tads[hesc.dixon.tads$class == "nonGRB"], "data/hesc_dixon_nongrb_tads.bed")
+
+export.bed(mesenchymal.dixon.tads, "data/mesenchymal_dixon_tads.bed")
+export.bed(mesenchymal.dixon.tads[mesenchymal.dixon.tads$class == "GRB"], "data/mesenchymal_dixon_grb_tads.bed")
+export.bed(mesenchymal.dixon.tads[mesenchymal.dixon.tads$class == "nonGRB"], "data/mesenchymal_dixon_nongrb_tads.bed")
+
+export.bed(mesendoderm.dixon.tads, "data/mesendoderm_dixon_tads.bed")
+export.bed(mesendoderm.dixon.tads[mesendoderm.dixon.tads$class == "GRB"], "data/mesendoderm_dixon_grb_tads.bed")
+export.bed(mesendoderm.dixon.tads[mesendoderm.dixon.tads$class == "nonGRB"], "data/mesendoderm_dixon_nongrb_tads.bed")
+
+export.bed(neural.dixon.tads, "data/neural_dixon_tads.bed")
+export.bed(neural.dixon.tads[neural.dixon.tads$class == "GRB"], "data/neural_dixon_grb_tads.bed")
+export.bed(neural.dixon.tads[neural.dixon.tads$class == "nonGRB"], "data/neural_dixon_nongrb_tads.bed")
+
+export.bed(trophoectoderm.dixon.tads, "data/trophoectoderm_dixon_tads.bed")
+export.bed(trophoectoderm.dixon.tads[trophoectoderm.dixon.tads$class == "GRB"], "data/trophoectoderm_dixon_grb_tads.bed")
+export.bed(trophoectoderm.dixon.tads[trophoectoderm.dixon.tads$class == "nonGRB"], "data/trophoectoderm_dixon_nongrb_tads.bed")
+
+
+
 saveRDS(hesc.homer.tads, "data/hesc.homer.tads.screened.rds")
 saveRDS(hesc.dixon.tads, "data/hesc.dixon.tads.screened.rds")
 saveRDS(mesenchymal.homer.tads, "data/mesenchymal.homer.tads.screened.rds")
