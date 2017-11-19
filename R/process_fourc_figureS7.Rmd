@@ -1,0 +1,210 @@
+---
+title: "fourc"
+author: "Nathan Harmston"
+date: "13 February 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(affy)
+library(simpleaffy)
+library(affy)
+library(affxparser)
+library(GenomicRanges)
+library(preprocessCore)
+library(rtracklayer)
+```
+
+```{r eval=FALSE}
+https://github.com/benja0x40/MiMB.4C
+library("devtools")
+install_github("benja0x40/MRA.TA")
+
+Rscript computeRestrictionMap.R -n DpnII  -m GATC -s genomes/UCSC_mm9/genome.fa.gz -i mm9 -r Processed_Data/mm9_restriction_map
+```
+
+```{r}
+library("MRA.TA")
+covdata = read.delim("covdata.txt")
+
+map.mm8 = read.delim("GPL14183_PRNFGMm2b520462F_rev.txt")
+bpmap_file =  "GPL14183_PRNFGMm2b520462F_rev.bpmap"
+bpmap <- readBpmap(bpmap_file)
+summary(bpmap)
+
+cel_files <- list.files("./",".CEL$")
+
+cel_header <- readCelHeader(cel_files[1])
+cel_indices <- lapply(bpmap, function(x) xy2indices(x[["pmx"]],  
+x[["pmy"]], nc=cel_header[["cols"]]))
+```
+
+Import coordinates of restriction fragments and match with probe coordinates
+-----------------------------------------------------------------------------.
+Read precomputed restriction fragments
+```{r}
+fragments <- readData( "mm9_DpnII_Fragments.txt.gz",
+  file.formats$restriction.fragment
+)
+
+# Define restriction fragments’ start and end (which depends on the enzyme)
+fr.len <- with(fragments, RS3.START - RS5.END + 1)
+fr.start <- fragments$RS5.END
+fr.end <- fragments$RS3.START
+
+# Make genomic intervals with probe and restriction fragment coordinates
+
+mm8.locations <- GRanges("chr2", IRanges(bpmap[["Mm:NCBIv36;chr2"]]$startpos, width=nchar(bpmap[["Mm:NCBIv36;chr2"]]$probeseq)), strand="*")
+
+ch.two = import.chain("mm8ToMm9.over.chain")
+results = liftOver(mm8.locations, ch.two)
+
+probes.grg = do.call(c, results)
+
+fragments.grg <- GRanges(
+  seqnames=as.character(fragments$CHR),
+  ranges=IRanges(
+    start=fr.start, end=fr.end,
+    names=as.character(fragments$RFID)
+  )
+)
+
+# Match probes to fragments using respective genomic intervals
+probes.grg <- matchProbesToFragments(probes.grg, fragments.grg)
+```
+
+```{r}
+tissue = "limb"
+bait = "d4"
+data <- readCelIntensities(as.character(covdata$FileName[covdata$Tissue==tissue & covdata$Bait==bait]), cel_indices[["Mm:NCBIv36;chr2"]])
+
+# Match array data to updated design using probe identifiers
+r1.4C <- data[,1]
+r1.ct <- data[,3]
+r2.4C <- data[,2]
+r2.ct <- data[,4]
+```
+
+Normalization procedure
+-----------------------------------------------------------------------------.
+Compute raw A and M values in each replicate
+
+```{r}
+r1.A <- (log2(r1.4C) + log2(r1.ct))/2 # average
+r1.M <- (log2(r1.4C) - log2(r1.ct))   # log2 ratio
+r2.A <- (log2(r2.4C) + log2(r2.ct))/2 # average
+r2.M <- (log2(r2.4C) - log2(r2.ct))   # log2 ratio
+```
+
+Normalization procedure (Step by step alternative)
+-----------------------------------------------------------------------------.
+# Apply background bias correction and lowess normalization to each replicate
+```{r}
+  # Compute raw A and M values in each replicate
+  r1.A <- (log2(r1.4C) + log2(r1.ct))/2
+  r1.M <- (log2(r1.4C) - log2(r1.ct))
+  r2.A <- (log2(r2.4C) + log2(r2.ct))/2
+  r2.M <- (log2(r2.4C) - log2(r2.ct))
+  
+  bb.r1 <- backgroundBiasEstimation(r1.A, r1.M, plots = T)
+  bb.r2 <- backgroundBiasEstimation(r2.A, r2.M, plots = T)
+
+  res <- backgroundBiasCorrection(r1.A, r1.M, theta=bb.r1)
+  r1.A <- res$x; r1.M <- res$y
+  res <- backgroundBiasCorrection(r2.A, r2.M, theta=bb.r2)
+  r2.A <- res$x; r2.M <- res$y
+
+  res <- lowessCorrection(r1.A, r1.M, lowess.f=0.2, plots = T)
+  r1.A <- res$x; r1.M <- res$y
+  res <- lowessCorrection(r2.A, r2.M, lowess.f=0.2, plots = T)
+  r2.A <- res$x; r2.M <- res$y
+```
+Probe selection
+-----------------------------------------------------------------------------.
+Identify probes likely associated with best/problematic signals with raw data
+```{r}
+r1.EQ <- enrichmentQuality(r1.ct, r1.4C, plots=T) # Replicate 1
+r2.EQ <- enrichmentQuality(r2.ct, r2.4C, plots=T) # Replicate 2
+```
+
+
+Make control plot of normalized 4C signal versus probe distance to site
+```{r}
+plotProbeDistanceControls(r1.M, rnk=probes.grg$RF_RANK, dis=probes.grg$RF_DIST, dlim=c(-1500, 1500), QF=r1.EQ)
+plotProbeDistanceControls(r2.M, rnk=probes.grg$RF_RANK, dis=probes.grg$RF_DIST, dlim=c(-1500, 1500), QF=r2.EQ)
+```
+
+Filtering option 1:
+fragment too short OR no fragment assigned OR distance to site too large
+```{r}
+reject <- with(probes.grg, RF_LEN < 50 | is.na(RF_ID) | RF_DIST>250)
+```
+
+Filtering option 2:
+Reject when fragment too short OR no fragment assigned OR rank to site too large
+```{r}
+#reject <- with(probes.grg, RF_LEN < 50 | is.na(RF_ID) | RF_RANK>2)
+```
+
+Always filter out probes associated to a problematic signal in both replicates
+```{r}
+reject <- reject | (r1.EQ$is.worst & r2.EQ$is.worst)
+```
+
+Make control plot of selected probes (4C signal versus probe distance to site)
+```{r}
+plotSelectedProbes(r1.A, r1.M, dis=probes.grg$RF_DIST, sel = ! reject)
+plotSelectedProbes(r2.A, r2.M, dis=probes.grg$RF_DIST, sel = ! reject)
+```
+
+Update probes and normalized data to retain accepted probes only
+```{r}
+probes.grg <- probes.grg[! reject]
+r1.A <- r1.A[! reject] # For consistency with r1.M and probes.grg
+r1.M <- r1.M[! reject]
+r2.A <- r2.A[! reject] # For consistency with r2.M and probes.grg
+r2.M <- r2.M[! reject]
+```
+
+4C enrichement scores
+-----------------------------------------------------------------------------.
+Calculate the number of accepted probes per half-fragment (5’ and 3’ ends)
+```{r}
+probes.grg <- countProbesPerFragment(probes.grg) 
+```
+
+Average 4C enrichments in each half-fragment
+```{r}
+y1 <- combineByFragment(r1.M, probes.grg, FUN=mean) # Replicate 1
+y2 <- combineByFragment(r2.M, probes.grg, FUN=mean) # Replicate 2
+```
+Compute statistical scores and pool replicates into combined 4C enrichment scores
+
+```{r}
+y1$SCORE <- enrichmentScore(y1$VALUE)
+y2$SCORE <- enrichmentScore(y2$VALUE)
+
+Yi <- y1$SCORE + y2$SCORE
+Yi <- sapply(-2*Yi, pchisq, df=2*2, lower.tail=FALSE, log.p=FALSE)
+
+fourc.grg = GRanges("chr2", IRanges(y1$SITE, width=1), strand="*", y1.value = y1$VALUE, y1.score = y1$SCORE,
+                y2.value = y2$VALUE, y2.score = y2$SCORE,
+                pvalue = Yi, fdr = p.adjust(Yi, "fdr"),
+                logpvalue = -log10(Yi), logfdr = -log10(p.adjust(Yi, "fdr")), id=y1$RF_ID
+        )
+```
+
+```{r}
+saveRDS(fragments.grg, "GSE31659_fourc_fragments_grg.rds")
+
+saveRDS(fourc.grg, paste("GSE31659_fourc", tissue, bait, "grg.rds", sep="_"))
+
+```
+
+
+
+```{r}
+sessionInfo()
+```

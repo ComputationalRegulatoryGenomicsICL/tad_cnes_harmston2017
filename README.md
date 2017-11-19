@@ -14,8 +14,8 @@ Developmental genes in metazoan genomes are surrounded by dense clusters of cons
  ### Scripts for reproduction of results and figures from manuscript
 All figures and results in the manuscript can be reproduced from the R scripts within this repository.<br>
 
-Script | Main figures | Supplementary figures
--------| ------------- | -------------
+Script | Main figures | Supplementary figures | Description 
+-------| ------------- | ------------- | -----------
 plot_grbs_figure1.Rmd | Figure 1 | FigureS1
 plot_grbs_figureS2.Rmd | | Figure S2
 calculate_grb_tad_overlaps_human.Rmd | Figure 2 | Figure S3
@@ -25,9 +25,11 @@ grbs_h3k27ac.Rmd |  | Figure S4
 ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 
 plot_grbs_figureS6.Rmd | | Figure S6
+process_fourc_figureS7 | | Figure S7a | processing of 4C data 
+plot_spsix_figureS7.Rmd | | Figure S7b
 repeat_analysis.Rmd | Figure 4 | Figure S8
 chromatin_colour.Rmd | Figure 4 | Figure S8
 ctcf_analysis.Rmd | Figure 4 | Figure S8
 dev_analysis.Rmd | Figure 4 |  Figure S9
-DifferentialExpression.Rmd |  | Figure S10
+DifferentialExpression.Rmd |  | Figure S10 | differential expression analysis of RNA-seq 
 genome_comparison.Rmd | Figure 5 | 

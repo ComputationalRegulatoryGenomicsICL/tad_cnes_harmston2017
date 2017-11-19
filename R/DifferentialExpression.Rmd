@@ -36,7 +36,7 @@ library("BSgenome.Hsapiens.UCSC.hg19")
 
 
 ```{r}
-hg.gtf.db <- makeTxDbFromGFF( "/Users/nph/Documents/workspace/genomes/hg19/Homo_sapiens.GRCh37.75.chr.gtf", format="gtf" )
+hg.gtf.db <- makeTxDbFromGFF( "Homo_sapiens.GRCh37.75.chr.gtf", format="gtf" )
 ensembl.genes = genes(hg.gtf.db)
 human = useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
 bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ensembl.genes$gene_id, uniqueRows=TRUE)
@@ -63,7 +63,7 @@ sampleTable <- data.frame(sampleName = experimental.metadata$sample,
                           fileName = paste(experimental.metadata$sample, htseq.suffix, sep=""),
                           lineage = experimental.metadata$lineage)
 
-basedir="~/Dropbox/Topological organisation of genomic regulatory blocks/compartments/rna-seq/"
+basedir="data/rna-seq/"
 ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
                                        directory = basedir,
                                        design= ~ lineage)
