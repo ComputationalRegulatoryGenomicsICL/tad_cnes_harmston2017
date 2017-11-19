@@ -1,0 +1,1458 @@
+---
+title: "CTCF at GRBs"
+output: html_document
+---
+# CTCF at GRBs
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=6, fig.height=6, fig.path='Figures/', dpi = 300,
+               echo=!short, warning=debug, message=debug,
+               cache.path = "ctcf_at_grbs_cache/")
+
+```
+
+```{r load_packages, echo=FALSE, cache=FALSE}
+library("GenomicRanges")
+library("GenomicAlignments")
+library("BSgenome.Mmusculus.UCSC.mm9")
+library("rtracklayer")
+library("stringr")
+library("scales")
+library("TFBSTools")
+library("JASPAR2014")
+library("CNEr")
+library("genomation")
+library("RColorBrewer")
+library("ggplot2")
+```
+
+```{r functions}
+generate.plot.matrix = function(norm.cov, regions, size){
+    
+    plot.matrix = matrix(0, ncol=size*3, nrow=length(regions))
+
+      for( i in 1:length(regions)){
+           #print(i)
+              #get region data
+            	chr = as.character(seqnames(regions[i]))
+            	reg.start = start(regions[i])
+            	reg.end = end(regions[i])
+            	reg.width = width(regions[i])
+              
+            	cov.start <- reg.start-reg.width
+            	cov.end <- reg.end+reg.width
+            	
+            	#in case region is more than chromosome length
+              chr_end <- seqlengths(regions)[chr]
+            	cov.start <- max(1,cov.start)
+              cov.end <- min(chr_end, cov.end)
+	            
+            	#get coverage of region and flanking areas
+              plot.cov = norm.cov[[chr]][cov.start:cov.end]
+
+              if (length(plot.cov) < (3*size)){
+                length_diff = (3*size) - length(plot.cov)
+              if ( reg.start-reg.width < 1){
+                plot.cov <- c(rep(0, length_diff), plot.cov)
+              }
+              if (reg.end+reg.width > chr_end){
+                plot.cov <- c(plot.cov, rep(0, length_diff))
+              }
+            }
+              
+              
+              #calculate splines
+              plot.matrix[i,] = spline(1:length(plot.cov), plot.cov, n = size*3)$y
+          }
+      return(plot.matrix)
+}
+
+generate.basic.plot.matrix = function(norm.cov, regions, size){
+    
+    plot.matrix = matrix(0, ncol=size, nrow=length(regions))
+
+      for( i in 1:length(regions)){
+           #print(i)
+              #get region data
+            	chr = as.character(seqnames(regions[i]))
+            	reg.start = start(regions[i])
+            	reg.end = end(regions[i])
+            	reg.width = width(regions[i])
+              
+            	cov.start <- reg.start
+            	cov.end <- reg.end
+            	
+            	#in case region is more than chromosome length
+              chr_end <- seqlengths(regions)[chr]
+            	cov.start <- max(1,cov.start)
+              cov.end <- min(chr_end, cov.end)
+	            
+            	#get coverage of region and flanking areas
+              plot.cov = norm.cov[[chr]][cov.start:cov.end]
+
+              if (length(plot.cov) < size){
+                length_diff = size - length(plot.cov)
+              if ( reg.start < 1){
+                plot.cov <- c(rep(0, length_diff), plot.cov)
+              }
+              if (reg.end > chr_end){
+                plot.cov <- c(plot.cov, rep(0, length_diff))
+              }
+            }
+              #calculate splines
+              plot.matrix[i,] = spline(1:length(plot.cov), plot.cov, n = size)$y
+          }
+      return(plot.matrix)
+}
+
+  
+annotate_peaks <- function(regions, peaks, maxgap){
+  starts <- resize(regions, fix="start", width=1)
+  ends <- resize(regions, fix="end", width=1)
+  
+  start_peak_idx <- subjectHits(findOverlaps(peaks, starts, maxgap=maxgap))
+  end_peak_idx <- subjectHits(findOverlaps(peaks, ends, maxgap=maxgap))
+ 
+  regions$group <- "None"
+  regions$group[start_peak_idx] <- "Start"
+  regions$group[end_peak_idx] <- "End"
+  regions$group[unique(start_peak_idx[start_peak_idx %in% end_peak_idx])] <- "Both"
+  
+  return(regions$group)
+}
+
+get_flanking_peaks <- function(regions, peaks, maxgap=2000){
+  
+  starts <- resize(regions, fix="start", width=1)
+  ends <- resize(regions, fix="end", width=1)
+  
+  start_idx <- queryHits(findOverlaps(peaks, starts, maxgap=maxgap))
+  end_idx <- queryHits(findOverlaps(peaks, ends, maxgap=maxgap))
+  
+  return(peaks[unique(c(start_idx, end_idx))])
+}
+
+shuffle_sml <- function(sml){
+  tmp <- lapply(sml, function(mat){
+    mat <- mat@.Data
+    n <- nrow(mat)
+    mat <- mat[sample(1:n, n, replace = FALSE),]
+    return(new("ScoreMatrix", mat))
+  })
+  
+  new("ScoreMatrixList",tmp)
+}
+
+
+generate.flank.plot.matrix = function(norm.cov, regions, flank, size){
+  
+  left_flank <- GRanges(seqnames = seqnames(regions), 
+                        IRanges(start = start(regions)-flank, end = start(regions)-1), 
+                        strand = strand(regions), seqinfo = seqinfo(regions))
+  right_flank <- GRanges(seqnames = seqnames(regions), 
+                         IRanges(start = end(regions), end = end(regions)+flank-1), 
+                         strand = strand(regions),seqinfo = seqinfo(regions))
+  
+  plot.matrix = matrix(0, ncol=size*3, nrow=length(regions))
+  
+  for( i in 1:length(regions)){
+    #print(i)
+    #get region data
+    
+    left_cov <- get.region.cov(norm.cov, left_flank[i])
+    region_cov <- get.region.cov(norm.cov, regions[i])
+    right_cov <- get.region.cov(norm.cov, right_flank[i])
+    
+    plot.cov <- c(left_cov, region_cov, right_cov)
+    
+    #calculate splines
+    plot.matrix[i,] = spline(1:length(plot.cov), plot.cov, n = size*3)$y
+  }
+  return(plot.matrix)
+}
+
+get.region.cov <- function(norm.cov, region){
+  chr = as.character(seqnames(region))
+  reg.start = start(region)
+  reg.end = end(region)
+  reg.width = width(region)
+  
+  cov.start <- reg.start
+  cov.end <- reg.end
+  
+  #in case region is more than chromosome length
+  chr_end <- seqlengths(region)[chr]
+  cov.start <- max(1,cov.start)
+  cov.end <- min(chr_end, cov.end)
+  
+  #get coverage of region
+  plot.cov = norm.cov[[chr]][cov.start:cov.end]
+  
+  if (length(plot.cov) < width(region)){
+    length_diff = width(region) - length(plot.cov)
+    if ( reg.start < 1){
+      plot.cov <- c(rep(0, length_diff), plot.cov)
+    }
+    if (reg.end > chr_end){
+      plot.cov <- c(plot.cov, rep(0, length_diff))
+    }
+  }
+  return(plot.cov)
+}
+```
+
+# Load data
+
+* GRB data: mm9 vs. galGal4, CNEs called at 70% over 50bp 
+* CTCF data: mouseENCODE, 17 cell lines / tissues, aligned to mm9 and peaks called by MACS
+
+* calculate ctcf binding percentage across all cell types
+
+```{r load_data, cache=TRUE}
+grbs <- import.bed("data/grbs/mm9_galGal4_70_50/mm9_galGal4_70_50.final.bed", 
+                   genome = "mm9")
+  
+ctcf_dir <- "ctcf/ctcf/"
+ctcf_peaks = list()
+ctcf.all.granges <- GRanges()
+
+ctcf_files <- list.files(ctcf_dir, pattern="*_rep1_peaks.bed")
+sample_names <- unique(sapply(ctcf_files, function(x){str_split(x, "Ctcf")[[1]][1]}))
+
+for(s in sample_names){
+    message(s)
+
+    rep1 <- paste0(ctcf_dir, ctcf_files[grep(paste0(s, ".*rep1_rep1_peaks.bed"),ctcf_files)])
+    rep2 <- paste0(ctcf_dir, ctcf_files[grep(paste0(s, ".*rep2_rep1_peaks.bed"),ctcf_files)])
+    
+    bf1 <- import.bed(rep1, genome="mm9")
+    bf2 <- import.bed(rep2, genome="mm9")
+    
+    if (length(bf2) > 0){
+      bf <- intersect(bf1, bf2)
+      bf$sample_name = s
+      bf$rep_chip = "intersect"
+      bf$rep_input = "rep1"
+    } else {
+      bf <- bf1
+      bf$sample_name = s
+      bf$rep_chip = "rep1"
+      bf$rep_input = "rep1"
+      mcols(bf) <- mcols(bf)[,c("sample_name", "rep_chip", "rep_input")] 
+    }
+
+    ctcf_peaks[[s]] = bf
+    ctcf.all.granges <- c(ctcf.all.granges, bf)
+}
+```
+
+```{r collate, cache = TRUE}
+ctcf.summary.gr = reduce(resize(ctcf.all.granges, width=400, fix = "center"))
+for(i in names(ctcf_peaks)){
+    elementMetadata(ctcf.summary.gr)[[i]] <- ifelse(countOverlaps(ctcf.summary.gr,
+                                                      ctcf_peaks[[i]])>0, 1, 0)
+}
+```
+
+```{r plot, cache=TRUE, dependson="collate"}
+hist(rowSums(as.matrix(elementMetadata(ctcf.summary.gr))))
+hist(rowSums(as.matrix(elementMetadata(ctcf.summary.gr))), xlim = c(1,17))
+```
+
+```{r export, cache=TRUE, dependson="collate"}
+probabilities = rowSums(as.matrix(elementMetadata(ctcf.summary.gr))) / 17
+ctcf.summary.cov = coverage(ctcf.summary.gr, weight=probabilities)
+export.bw(ctcf.summary.cov, "mm9_ctcf_probabilities.bigWig")
+```
+
+* plot coverage of percentage of the time that CTCF is bound at a given site
+
+```{r make_prob_cov, cache=TRUE, dependson="export"}
+
+size <- 100
+prob_cov_mat <- generate.plot.matrix(regions = grbs, norm.cov = ctcf.summary.cov, size = size)
+```
+
+```{r plot_prob_cov, cache=TRUE, dependson="make_prob_cov"}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(prob_cov_mat), type="l", ylab= "CTCF probability",
+     xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+```
+
+This is the "CTCF probabilities" across 17 cell types track, plotted across GRBs and an equivalently sized flanking region on each side. There is no enrichment at GRB boundaries. If anything GRBs look slightly depleted - this is probably to do with having fewer CTCF sites rather than those sites being present in fewer cell types.
+
+```{r make_boundaries_prob_cov, cache=TRUE}
+starts <- resize(grbs, fix = "start", width = 1)
+ends <- resize(grbs, fix = "end", width = 1)
+boundaries <- resize(c(starts, ends), 50000, fix = "center")
+boundaries_prob_cov_mat <- generate.plot.matrix(regions = boundaries, norm.cov = ctcf.summary.cov, size = size)
+```
+
+```{r plot_boundaries_prob_cov, cache=TRUE, dependson="make_boundaries_prob_cov"}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(boundaries_prob_cov_mat), type="l", ylab= "CTCF probability",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(boundaries_prob_cov_mat[1:775,]), type="l", ylab= "CTCF probability (starts)",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(boundaries_prob_cov_mat[776:1550,]), type="l", ylab= "CTCF probability (ends)",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+```
+
+This is the same track. I've taken all starts/ends of GRBs, taken a 50 kb window around them, and plotted coverage in the 50kb window and an equivalently sized window each side (so start is start of the 50kb window, not the GRB). They're not flipped so that the GRB is always on the same side, so I don't know why it's asymmetric (noise?).
+
+```{r annotate_w_ctcf_peaks, cache=TRUE, results="as.is"}
+grbs$ctcf_group <- annotate_peaks(regions = grbs, peaks = ctcf.summary.gr, maxgap = 10000)
+grbs$ctcf_group[grbs$ctcf_group %in% c("Start", "End")] <- "One flank"
+table(grbs$ctcf_group)
+
+grbs$constit_ctcf_group <- annotate_peaks(regions = grbs, 
+                                          peaks = ctcf.summary.gr[which(probabilities > 0.85)], 
+                                          maxgap = 10000)
+grbs$constit_ctcf_group[grbs$constit_ctcf_group %in% c("Start", "End")] <- "One flank"
+table(grbs$constit_ctcf_group)
+
+flanking_ctcf <- get_flanking_peaks(regions = grbs, peaks = ctcf.summary.gr, maxgap = 10000)
+
+hist(rowSums(as.matrix(mcols(flanking_ctcf))))
+plot(density(rowSums(as.matrix(mcols(flanking_ctcf)))), ylim = c(0,0.25))
+lines(density(rowSums(as.matrix(mcols(ctcf.summary.gr)))), lty = 2)
+```
+
+I've assigned CTCF peaks to the boundaries of GRBs based on a 10kb cutoff - does this sound okay? Not sure what's suitable given the size/resolution of GRBs. Many do have CTCF binding. 
+
+--> Compare to randomised CTCF peak positions??
+
+CTCF peaks assigned to GRB flanks are more likely to be constitutive. Compare the histogram to the one for all sites... The dotted line on the density plot is for all sites. 
+
+Another way to compare this is by plotting the ratio of the proportion of peaks that are present in 1, 2,... 17 cell types. I've done this below and calculated p-values with a binomial test.
+
+```{r ctcf_constit_ratio, cache=TRUE, fig.width=8, fig.height=6}
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))))
+
+binom_pvals <- sapply(1:17, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+stars <- rep("", 17)
+stars[which(binom_pvals < 0.05)] <- "*"
+stars[which(binom_pvals < 0.01)] <- "**"
+stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(ratio) + 0.05 * ifelse(ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 17)
+cols[which(ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+bp <- barplot(log2(ratio), col = cols, border = NA, ylim = c(-0.45, 1))
+text(stars, x = bp, y = star_pos)
+```
+
+### plot constitutive CTCF at TAD boundaries
+
+```{r load_tads, cache=TRUE}
+tads_file <- "tads/dixon/mm9/mm9.esc.total.HindIII.combined.domain.bed"
+mm9_tads <- import.bed(tads_file)
+
+```
+
+```{r assign_tads_grbs, cache=TRUE}
+overlaps_all <- findOverlaps(mm9_tads, grbs)
+overlaps_tab <- table(queryHits(overlaps_all))
+mm9_tads$id <- 1:length(mm9_tads)
+
+#count number of grbs each tad overlaps
+mm9_tads$overlap_count <- ifelse(mm9_tads$id %in% names(overlaps_tab), 
+                                 overlaps_tab[as.character(mm9_tads$id)], 
+                                 0)
+
+#get total width and fraction overlap
+mm9_tads$overlap <- 0
+mm9_tads$fractionoverlap <- 0
+overlap_idx <- queryHits(overlaps_all)
+for (i in overlap_idx){
+ mm9_tads$overlap[i] <- sum(width(BiocGenerics::intersect(mm9_tads[i], grbs)))
+}
+mm9_tads$fractionoverlap <- mm9_tads$overlap/width(mm9_tads)
+
+plot(density(mm9_tads$fractionoverlap), type = "l", 
+     main = "Fraction overlap between TADs and GRBs")
+abline(v = c(0.2, 0.8), lty = 2)
+
+mm9_tads$class <- "nonGRB"
+mm9_tads$class[mm9_tads$fractionoverlap > 0.2] <- "screened"
+mm9_tads$class[mm9_tads$fractionoverlap > 0.8 & mm9_tads$overlap_count == 1] <- "GRB"
+mm9_tads$class[mm9_tads$overlap_count > 1] <- "screened"
+```
+
+
+```{r annotate_tads_w_ctcf, cache=TRUE}
+mm9_tads$ctcf_group <- annotate_peaks(regions = mm9_tads, peaks = ctcf.summary.gr, maxgap = 10000)
+mm9_tads$ctcf_group[mm9_tads$ctcf_group %in% c("Start", "End")] <- "One flank"
+table(mm9_tads$ctcf_group)
+
+mm9_tads$constit_ctcf_group <- annotate_peaks(regions = mm9_tads, 
+                                          peaks = ctcf.summary.gr[which(probabilities > 0.85)], 
+                                          maxgap = 10000)
+mm9_tads$constit_ctcf_group[mm9_tads$constit_ctcf_group %in% c("Start", "End")] <- "One flank"
+table(mm9_tads$constit_ctcf_group)
+
+flanking_ctcf <- get_flanking_peaks(regions = mm9_tads, peaks = ctcf.summary.gr, maxgap = 10000)
+
+hist(rowSums(as.matrix(mcols(flanking_ctcf))))
+plot(density(rowSums(as.matrix(mcols(flanking_ctcf)))), ylim = c(0,0.25))
+lines(density(rowSums(as.matrix(mcols(ctcf.summary.gr)))), lty = 2)
+```
+
+This is the same ratio of peaks in 1, 2,... 17 cell types representation as above, but for CTCF at TAD boundaries (all, GRB TADs, and non-GRB TADs).
+
+```{r tad_ctcf_constit_ratio, cache=TRUE, fig.width=8, fig.height=6}
+## all tads
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))))
+
+binom_pvals <- sapply(1:17, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+stars <- rep("", 17)
+stars[which(binom_pvals < 0.05)] <- "*"
+stars[which(binom_pvals < 0.01)] <- "**"
+stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(ratio) + 0.05 * ifelse(ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 17)
+cols[which(ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+bp <- barplot(log2(ratio), col = cols, border = NA, ylim = c(-0.45, 1), main = "All TADs")
+text(stars, x = bp, y = star_pos)
+
+## grb-tads
+flanking_ctcf <- get_flanking_peaks(regions = mm9_tads[which(mm9_tads$class == "GRB")],
+                                    peaks = ctcf.summary.gr, maxgap = 10000)
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))))
+
+binom_pvals <- sapply(1:17, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+stars <- rep("", 17)
+stars[which(binom_pvals < 0.05)] <- "*"
+stars[which(binom_pvals < 0.01)] <- "**"
+stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(ratio) + 0.05 * ifelse(ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 17)
+cols[which(ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+bp <- barplot(log2(ratio), col = cols, border = NA, ylim = c(-0.45, 1), main = "GRB TADs")
+text(stars, x = bp, y = star_pos)
+
+## non-grb-tads
+flanking_ctcf <- get_flanking_peaks(regions = mm9_tads[which(mm9_tads$class == "nonGRB")],
+                                    peaks = ctcf.summary.gr, maxgap = 10000)
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))))
+
+binom_pvals <- sapply(1:17, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+stars <- rep("", 17)
+stars[which(binom_pvals < 0.05)] <- "*"
+stars[which(binom_pvals < 0.01)] <- "**"
+stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(ratio) + 0.05 * ifelse(ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 17)
+cols[which(ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+bp <- barplot(log2(ratio), col = cols, border = NA, ylim = c(-0.45, 1), main = "Non-GRB TADs")
+text(stars, x = bp, y = star_pos)
+```
+
+### Do CTCF sites at GRB edges have motifs? Are those motifs conserved?
+
+```{r get_ctcf_peak_seqs, cache=TRUE}
+flanking_ctcf <- get_flanking_peaks(regions = grbs, peaks = ctcf.summary.gr, maxgap = 10000)
+ctcf_seqs <- getSeq(Mmusculus, flanking_ctcf)
+```
+
+```{r get_motifs, cache=TRUE}
+opts <- list(name="CTCF", species = "9606") #species = human
+pfm <- getMatrixSet(JASPAR2014, opts)[[1]]
+pwm <- TFBSTools:::toPWM(pfm)
+
+TFBSTools::seqLogo(toICM(pfm))
+
+matches <- lapply(ctcf_seqs, function(s){searchSeq(pwm, s, min.score = "80%")})
+flanking_ctcf$motif_count <- sapply(matches, length)
+```
+
+```{r get_aln_motifs_galGal4, cache=TRUE}
+mm9_galGal4_axt <- readAxt("/export/downloads/ucsc/axtNet/mm9/mm9.galGal4.net.axt.gz")
+
+aln_list <- lapply(flanking_ctcf, function(gr){
+  chr <- as.character(seqnames(gr))
+  s <- start(gr)
+  e <- end(gr)
+  subAxt(mm9_galGal4_axt, chr, s, e, select=c("target", "query"), qSize=NULL)
+})
+
+flanking_ctcf$galGal4_aln_count <- sapply(aln_list, length)
+
+aln_match_list <- lapply(aln_list, function(aln){
+  sitePairSet <- searchAln(pwm, aln, min.score="80%")
+})
+
+
+aln_match_count <- sapply(aln_match_list, function(x){ 
+  if (length(x@listData) == 0) {
+  return(0)}
+  else{
+    sum(sapply(x@listData, length))
+  }
+})
+
+flanking_ctcf$galGal4_aln_motif_count <- aln_match_count
+```
+
+```{r get_aln_motifs_lepOcu1, cache=TRUE}
+mm9_lepOcu1_axt <- readAxt("/export/downloads/ucsc/axtNet/mm9/mm9.lepOcu1.net.axt.gz")
+
+aln_list <- lapply(flanking_ctcf, function(gr){
+  chr <- as.character(seqnames(gr))
+  s <- start(gr)
+  e <- end(gr)
+  subAxt(mm9_lepOcu1_axt, chr, s, e, select=c("target", "query"), qSize=NULL)
+})
+
+flanking_ctcf$lepOcu1_aln_count <- sapply(aln_list, length)
+
+aln_match_list <- lapply(aln_list, function(aln){
+  sitePairSet <- searchAln(pwm, aln, min.score="80%")
+})
+
+
+aln_match_count <- sapply(aln_match_list, function(x){ 
+  if (length(x@listData) == 0) {
+  return(0)}
+  else{
+    sum(sapply(x@listData, length))
+  }
+})
+
+flanking_ctcf$lepOcu1_aln_motif_count <- aln_match_count
+```
+
+There are `r length(flanking_ctcf)` CTCF peaks bound in at least one cell type within 10kb of a GRB edge. Of these, `r sum(flanking_ctcf$motif_count > 0)` have a CTCF motif (80% similarity). 
+
+`r sum(flanking_ctcf$galGal4_aln_count > 0 & flanking_ctcf$motif_count > 0)` of the peaks are alignable to chicken (galGal4) and have at least one motif, and of these `r sum(flanking_ctcf$galGal4_aln_motif_count > 0)` have a motif conserved in chicken (default TFBSTools:: searchAln settings).
+
+`r sum(flanking_ctcf$lepOcu1_aln_count > 0 & flanking_ctcf$motif_count > 0)` of the peaks are alignable to lepOcu1 and have at least one motif, and of these `r sum(flanking_ctcf$lepOcu1_aln_motif_count > 0)` have a motif conserved in lepOcu1.
+
+### plot coverage of actual CTCF binding on average across all cell types
+
+```{r load_ctcf, cache=TRUE, cache.lazy=FALSE}
+ctcf_dir <- "/mnt/biggles/csc_projects/nathanh/ctcf/"
+ctcf_bam_files <- lapply(sample_names, function(s) {
+  list.files(ctcf_dir, pattern = paste0(s, ".*Ctcf.*sorted.bam$"), full.names = TRUE)})
+names(ctcf_bam_files) <- sample_names
+
+param <- ScanBamParam(flag = scanBamFlag(isUnmappedQuery=FALSE, isDuplicate = FALSE))
+
+ctcf_cov_list <- list()
+
+for (s in sample_names){
+  message(s)
+  gr <- lapply(ctcf_bam_files[[s]], function(f){
+    as(readGAlignments(f, param = param), "GRanges")
+  })
+  gr <- do.call("c", gr)
+  gr <- resize(gr, width = 200)
+  seqinfo(gr) <- seqinfo(Mmusculus)[seqlevels(gr)]
+  gr <- trim(gr)
+  gr_coverage <- coverage(gr)
+  gr_coverage <- gr_coverage * 1e6 / length(gr)
+  
+  ctcf_cov_list[[s]] <- gr_coverage
+}
+
+```
+
+```{r combine_ctcf, cache=TRUE, cache.lazy=FALSE}
+all_cov <- ctcf_cov_list[[1]]
+for (i in 2:length(ctcf_cov_list)){
+  all_cov <- all_cov + ctcf_cov_list[[i]]
+}
+all_cov <- all_cov/length(ctcf_cov_list)
+```
+
+```{r make_all_cov_mat, cache=TRUE, dependson="combine_ctcf"}
+all_ctcf_cov_mat <- generate.plot.matrix(regions = grbs, norm.cov = all_cov, size = size)
+boundaries_ctcf_cov_mat <- generate.plot.matrix(regions = boundaries, norm.cov = all_cov, size = size)
+```
+
+```{r plot_all_cov, cache=TRUE, dependson= "make_all_cov_mat"}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(all_ctcf_cov_mat), type="l", ylab= "Avg CTCF",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(boundaries_ctcf_cov_mat[1:775,]), type="l", ylab= "CTCF binding (starts)",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(boundaries_ctcf_cov_mat[776:1550,]), type="l", ylab= "CTCF binding (ends)",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+```
+
+```{r ctcf_heatmap_grbs, cache=TRUE, fig.width=10, fig.height=10}
+grbs_exp <- grbs[order(width(grbs), decreasing = TRUE)]
+grbs_exp <- as(resize(grbs, fix = "center", width = max(width(grbs))), "GRanges")
+grbs_mat <- ScoreMatrixBin(windows = grbs_exp, target = all_cov, bin.num = 1000)
+grbs_mat <- scaleScoreMatrix(grbs_mat, scalefun = function(x){log10(x+1)})
+heatMatrix(grbs_mat, winsorize = c(5,95), col = brewer.pal(n = 9, name = "Blues"))
+```
+
+```{r ctcf_heatmap_edges, cache=TRUE, fig.width=10, fig.height=10}
+starts <- resize(grbs, fix = "start", width = 1)
+starts <- as(resize(starts, fix = "center", width = 50000), "GRanges")
+starts_mat <- ScoreMatrixBin(windows = starts, target = all_cov, bin.num = 1000)
+starts_mat <- scaleScoreMatrix(starts_mat, scalefun = function(x){log10(x+1)})
+heatMatrix(starts_mat, winsorize = c(1,99), col = brewer.pal(n = 9, name = "Blues"))
+
+ends <- resize(grbs, fix = "end", width = 1)
+ends <- as(resize(ends, fix = "center", width = 50000), "GRanges")
+ends_mat <- ScoreMatrixBin(windows = ends, target = all_cov, bin.num = 1000)
+ends_mat <- scaleScoreMatrix(ends_mat, scalefun = function(x){log10(x+1)})
+heatMatrix(ends_mat, winsorize = c(1,99), col = brewer.pal(n = 9, name = "Blues"))
+```
+
+The original Dixon et al paper shows enrichment of CTCF sites at TAD boundaries by plotting CTCF sites per 10kb, so I tried that. CTCF sites per 10kb is  plotted across GRBs, plotted with lowess smoothing, and plotted for 50kb windows around the starts/ends of GRBs.
+
+GRBs are clearly depleted of CTCF binding compared to outside regions, and the boundaries appear somewhat enriched.
+
+```{r ctcf_sites_per_10kb, cache=TRUE}
+chrs <- names(seqlengths(Mmusculus))[1:21]
+bins <- lapply(chrs, function(chr){
+  l <- seqlengths(Mmusculus)[chr]
+  starts <- seq(0,l, by = 1000)
+  ends <- starts + 10000
+  
+  starts <- starts[1 : max(which(ends < l))]
+  ends <- ends[1 : max(which(ends < l))]
+  return(GRanges(seqnames = chr, IRanges(starts, ends), seqinfo = seqinfo(Mmusculus)))
+})
+
+bins <- do.call("c", bins)
+bins$weights <- countOverlaps(bins, ctcf.summary.gr)
+bins <- resize(bins, fix="center", width = 1000)
+
+ctcf_per_10kb_cov <- coverage(bins, weight = bins$weights)
+
+bins$weights <- countOverlaps(bins,
+                        ctcf.summary.gr[which(rowSums(as.matrix(mcols(ctcf.summary.gr))) >= 15)])
+constit_ctcf_per_10kb_cov <- coverage(bins, weight = bins$weights)
+```
+
+```{r ctcf_per_10kb_cov_mat, cache=TRUE, dependson="ctcf_sites_per_10kb"}
+size <- 100
+per10kb_grbs_mat <- generate.plot.matrix(regions = grbs, norm.cov = ctcf_per_10kb_cov, size = size)
+per10kb_boundaries_mat <- generate.plot.matrix(regions = boundaries, norm.cov = ctcf_per_10kb_cov, size = size)
+```
+
+```{r plot_ctcf_per10kb, cache=TRUE, dependson="ctcf_per_10kb_cov_mat"}
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(per10kb_grbs_mat), type="l", ylab= "CTCF sites per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(lowess(colMeans(per10kb_grbs_mat), f = 1/50), type="l", ylab= "CTCF sites per 10kb",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+# par(cex=2, mar=c(2.1,2.1,1,1))
+# plot(colMeans(per10kb_boundaries_mat[1:775,]), type="l", ylab= "CTCF sites per 10kb (starts)",
+#     xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+# axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+# 
+# par(cex=2, mar=c(2.1,2.1,1,1))
+# plot(colMeans(per10kb_boundaries_mat[776:1550,]), type="l", ylab= "CTCF sites per 10kb (ends)",
+#     xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+# axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+# 
+flipped_mat <- per10kb_boundaries_mat
+flipped_mat[776:1550,] <- t(apply(flipped_mat[776:1550,], 1, rev))
+
+par(cex=2, mar=c(2.1,2.1,1,1))
+plot(colMeans(flipped_mat), type="l", ylab= "CTCF sites per 10kb (boundaries)",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+```
+
+```{r ctcf_per10kb_heatmap_grbs, cache=TRUE, fig.width=10, fig.height=10}
+grbs_exp <- grbs[order(width(grbs), decreasing = TRUE)]
+grbs_exp <- as(resize(grbs, fix = "center", width = max(width(grbs))), "GRanges")
+grbs_mat <- ScoreMatrixBin(windows = grbs_exp, target = ctcf_per_10kb_cov, bin.num = 1000)
+grbs_mat <- scaleScoreMatrix(grbs_mat, scalefun = function(x){log10(x+1)})
+heatMatrix(grbs_mat, winsorize = c(5,95), col = brewer.pal(n = 9, name = "Blues"))
+```
+
+```{r ctcf_per10kb_heatmap_edges, cache=TRUE, fig.width=10, fig.height=10}
+starts <- resize(grbs, fix = "start", width = 1)
+starts <- as(resize(starts, fix = "center", width = 50000), "GRanges")
+starts_mat <- ScoreMatrixBin(windows = starts, target = ctcf_per_10kb_cov, bin.num = 1000)
+starts_mat <- scaleScoreMatrix(starts_mat)
+heatMatrix(starts_mat, winsorize = c(1,99), col = brewer.pal(n = 9, name = "Blues"))
+
+ends <- resize(grbs, fix = "end", width = 1)
+ends <- as(resize(ends, fix = "center", width = 50000), "GRanges")
+ends_mat <- ScoreMatrixBin(windows = ends, target = ctcf_per_10kb_cov, bin.num = 1000)
+ends_mat <- scaleScoreMatrix(ends_mat)
+heatMatrix(ends_mat, winsorize = c(1,99), col = brewer.pal(n = 9, name = "Blues"))
+```
+
+```{r ctcf_per10kb_at_tad_edges, cache=TRUE}
+# s <- sapply(seqlevels(mm9_tads), function(chr){
+#   min(start(mm9_tads[seqnames(mm9_tads)==chr]))
+# })
+# 
+# e <- sapply(seqlevels(mm9_tads), function(chr){
+#   max(end(mm9_tads[seqnames(mm9_tads)==chr]))
+# })
+# 
+# tad_gaps <- gaps(mm9_tads, start = s, end = e)
+# tad_gaps <- tad_gaps[which(strand(tad_gaps)=="*")]
+# seqlengths(tad_gaps) <- seqlengths(Mmusculus)[seqlevels(tad_gaps)]
+# tad_gaps <- tad_gaps[width(tad_gaps) < 1000000]
+
+edges <- c(resize(mm9_tads, fix = "start", width = 1), 
+           resize(mm9_tads, fix = "end", width = 1))
+edges <- resize(edges, width = 100000, fix = "center")
+seqlengths(edges) <- seqlengths(Mmusculus)[seqlevels(edges)]
+
+edges <- edges[which(
+  (start(edges) - 100000) >= 0 & 
+    (end(edges) + 100000) <= seqlengths(edges)[as.character(seqnames(edges))]
+)]
+
+size = 100
+# tad_gaps_mat <- generate.plot.matrix(regions = tad_gaps, norm.cov = ctcf_per_10kb_cov, size = size)
+
+edges_mat <- generate.plot.matrix(regions = edges, norm.cov = ctcf_per_10kb_cov, size = size)
+```
+
+```{r plot_ctcf_per10kb_at_tad_edges, cache=TRUE, dependson="ctcf_per10kb_at_tad_edges"}
+# par(cex=2, mar=c(2.1,2.1,1,1))
+# plot(colMeans(tad_gaps_mat), type="l", ylab= "CTCF sites per 10kb",
+#     xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+# axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+# par(cex=2, mar=c(2.1,2.1,1,1))
+# plot(colMeans(edges_mat), type="l", main = "CTCF sites per 10kb",
+#     xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+# axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+plot(colMeans(edges_mat[which(edges$class == "GRB"),]), type="l", 
+     main = "CTCF sites per 10kb (GRB-TADs)", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+
+plot(colMeans(edges_mat[which(edges$class == "nonGRB"),]), type="l", 
+     main = "CTCF sites per 10kb (nonGRB-TADs)", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("Start", "End"))
+```
+
+### Comparison of CTCF sites per 10kb at GRB/TAD edges
+
+```{r compare_ctcf_per10kb, cache=TRUE}
+tad_starts <- resize(mm9_tads, fix = "start", width = 1)
+tad_starts <- resize(tad_starts, width = 1000000, fix = "center")
+seqlengths(tad_starts) <- seqlengths(Mmusculus)[seqlevels(tad_starts)]
+
+outside_idx <- which(start(tad_starts) <= 0 | end(tad_starts) > seqlengths(tad_starts)[as.character(seqnames(tad_starts))])
+tad_starts <- tad_starts[-outside_idx]
+
+tad_starts_mat <- generate.basic.plot.matrix(regions = tad_starts, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+
+tad_ends <- resize(mm9_tads, fix = "end", width = 1)
+tad_ends <- resize(tad_ends, width = 1000000, fix = "center")
+seqlengths(tad_ends) <- seqlengths(Mmusculus)[seqlevels(tad_ends)]
+
+outside_idx <- which(start(tad_ends) <= 0 | end(tad_ends) > seqlengths(tad_ends)[as.character(seqnames(tad_ends))])
+tad_ends <- tad_ends[-outside_idx]
+
+tad_ends_mat <- generate.basic.plot.matrix(regions = tad_ends, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+tad_edges_mat <- rbind(tad_starts_mat, t(apply(tad_ends_mat, 1, rev)))
+tad_edges <- c(tad_starts, tad_ends)
+
+grb_starts <- resize(grbs, fix = "start", width = 1)
+grb_starts <- resize(grb_starts, width = 1000000, fix = "center")
+seqlengths(grb_starts) <- seqlengths(Mmusculus)[seqlevels(grb_starts)]
+
+outside_idx <- which(start(grb_starts) <= 0 | end(grb_starts) > seqlengths(grb_starts)[as.character(seqnames(grb_starts))])
+grb_starts <- grb_starts[-outside_idx]
+
+grb_starts_mat <- generate.basic.plot.matrix(regions = grb_starts, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+
+grb_ends <- resize(grbs, fix = "end", width = 1)
+grb_ends <- resize(grb_ends, width = 1000000, fix = "center")
+seqlengths(grb_ends) <- seqlengths(Mmusculus)[seqlevels(grb_ends)]
+
+outside_idx <- which(start(grb_ends) <= 0 | end(grb_ends) > seqlengths(grb_ends)[as.character(seqnames(grb_ends))])
+grb_ends <- grb_ends[-outside_idx]
+
+grb_ends_mat <- generate.basic.plot.matrix(regions = grb_ends, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+
+grb_edges_mat <- rbind(grb_starts_mat, t(apply(grb_ends_mat, 1, rev)))
+```
+
+```{r plot_compare_ctcf_per10kb_1, cache=TRUE, fig.width=6, fig.height=5}
+par(mfrow = c(1,2), mar = c(4,2,4,1))
+plot(colMeans(grb_starts_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "", ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All GRB starts", side = 3, line = 1)
+
+plot(colMeans(grb_ends_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb inside", "boundary", "500kb outside"))
+mtext("All GRB ends", side = 3, line = 1)
+```
+
+```{r plot_compare_ctcf_per10kb, cache=TRUE, fig.width = 12, fig.height = 5}
+par(mfrow = c(1,4), mar = c(4,2,4,1))
+plot(colMeans(grb_edges_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "All GRBs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat), type="l", 
+     main = "All TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "GRB"),]), type="l", 
+     main = "GRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+#### CTCF per 10kb at only starts
+
+```{r plot_starts_only, cache=TRUE, fig.width = 12, fig.height = 5}
+par(mfrow = c(1,4), mar = c(4,2,4,1))
+plot(colMeans(grb_starts_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "All GRBs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_starts_mat), type="l", 
+     main = "All TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_starts_mat[which(tad_starts$class == "GRB"),]), type="l", 
+     main = "GRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_starts_mat[which(tad_starts$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+#### CTCF per 10kb at only ends
+
+```{r plot_ends_only, cache=TRUE, fig.width = 12, fig.height = 5}
+par(mfrow = c(1,4), mar = c(4,2,4,1))
+plot(colMeans(grb_ends_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "All GRBs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb inside", "boundary", "500kb outside"))
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_ends_mat), type="l", 
+     main = "All TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb inside", "boundary", "500kb outside"))
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_ends_mat[which(tad_ends$class == "GRB"),]), type="l", 
+     main = "GRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb inside", "boundary", "500kb outside"))
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_ends_mat[which(tad_ends$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs",  ylim = c(0, 1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb inside", "boundary", "500kb outside"))
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+
+```{r compare_constit_ctcf_per10kb, cache=TRUE, dependson="ctcf_sites_per_10kb"}
+tad_edges <- c(resize(mm9_tads, fix = "start", width = 1), 
+           resize(mm9_tads, fix = "end", width = 1))
+tad_edges <- resize(tad_edges, width = 1000000, fix = "center")
+seqlengths(tad_edges) <- seqlengths(Mmusculus)[seqlevels(tad_edges)]
+
+tad_edges_mat <- generate.basic.plot.matrix(regions = tad_edges, 
+                                            norm.cov = constit_ctcf_per_10kb_cov, size = 100)
+
+grb_edges <- c(resize(grbs, fix = "start", width = 1), 
+           resize(grbs, fix = "end", width = 1))
+grb_edges <- resize(grb_edges, width = 1000000, fix = "center")
+seqlengths(grb_edges) <- seqlengths(Mmusculus)[seqlevels(grb_edges)]
+
+grb_edges_mat <- generate.basic.plot.matrix(regions = grb_edges, 
+                                            norm.cov = constit_ctcf_per_10kb_cov, size = 100)
+grb_edges_mat[776:1550,] <- t(apply(grb_edges_mat[776:1550,], 1, rev))
+```
+
+```{r plot_compare_constit_ctcf_per10kb, cache=TRUE, fig.width = 12, fig.height = 5, dependson="compare_constit_ctcf_per10kb"}
+par(mfrow = c(1,4), mar = c(4,2,4,1))
+plot(colMeans(grb_edges_mat), type="l", ylab = "Constitutive CTCF sites per 10kb",
+     main = "All GRBs", ylim = c(0,0.05),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("500kb outside", "boundary", "500kb inside"))
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat), type="l", 
+     main = "All TADs", ylim = c(0,0.05),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("-500kb", "boundary", "+500kb"))
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "GRB"),]), type="l", 
+     main = "GRB-TADs", ylim = c(0,0.05),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("-500kb", "boundary", "+500kb"))
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs", ylim = c(0,0.05),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels=c("-500kb", "boundary", "+500kb"))
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+### CTCF per 10kb across whole GRB/TAD
+
+```{r region_flank_ctcf, cache=TRUE}
+seqinfo(mm9_tads) <- seqinfo(grbs)
+
+grb_flank_mat <- generate.flank.plot.matrix(regions = grbs, norm.cov = ctcf_per_10kb_cov, 
+                                            size = 100, flank = 500000)
+tad_flank_mat <- generate.flank.plot.matrix(regions = mm9_tads, 
+                                            norm.cov = ctcf_per_10kb_cov, 
+                                            size = 100, flank = 500000)
+```
+
+```{r plot_region_flank_ctcf,cache=TRUE, fig.width = 12, fig.height = 5}
+par(mfrow = c(1,4), mar = c(4,2,4,1))
+plot(colMeans(grb_flank_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "All GRBs", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size, size*2, size*3), labels=c("- 500kb", "start", "end", "+ 500kb"))
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_flank_mat), type="l", 
+     main = "All TADs", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size, size*2, size*3), labels=c("- 500kb", "start", "end", "+ 500kb"))
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_flank_mat[which(mm9_tads$class == "GRB"),]), type="l", 
+     main = "GRB-TADs", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size, size*2, size*3), labels=c("- 500kb", "start", "end", "+ 500kb"))
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_flank_mat[which(mm9_tads$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs", ylim = c(0,1),
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size, size*2, size*3), labels=c("- 500kb", "start", "end", "+ 500kb"))
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+## Distances from GRB edges to TAD boundaries
+
+```{r grb_tad_distances, cache=TRUE}
+grb_starts <- resize(grbs, fix="start", width = 1)
+grb_ends <- resize(grbs, fix="end", width = 1)
+tad_starts <- resize(mm9_tads, fix="start", width = 1)
+tad_ends <- resize(mm9_tads, fix="end", width = 1)
+
+start_idx <- nearest(grb_starts, tad_starts)
+start_dists <- data.frame(grb = 1:length(grbs), 
+                        tad_idx = start_idx, 
+                        dist = start(tad_starts[start_idx]) - start(grb_starts))
+
+end_idx <- nearest(grb_ends, tad_ends)
+end_dists <- data.frame(grb = 1:length(grbs), 
+                        tad_idx = end_idx, 
+                        dist = start(tad_ends[end_idx]) - start(grb_ends))
+
+ggplot(start_dists, aes(x = dist)) + 
+  geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+  coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+  geom_vline(x = 0, linetype = 2, colour = "red") + 
+  ggtitle("GRB starts and TAD starts") + 
+  scale_x_continuous("Relative genomic position of nearest TAD start")
+
+ggplot(end_dists, aes(x = dist)) + 
+  geom_histogram(binwidth = 50000, fill = "lightgrey", colour = "black") + 
+  coord_cartesian(xlim = c(-1000000, 1000000)) + theme_bw() + 
+  geom_vline(x = 0, linetype = 2, colour = "red") +
+  ggtitle("GRB ends and TAD end") + 
+  scale_x_continuous("Relative genomic position of nearest TAD end")
+
+```
+
+## Conservation relative to GRB edges
+
+```{r set_up, cache=TRUE}
+targets <- c("/mnt/biggles/csc_projects/lizis/grb_tad/mm9_phastcons_vertebrate/output.bw",
+             "/mnt/biggles/csc_projects/lizis/grb_tad/mm9_phastcons_placental/output.bw",
+             "/mnt/biggles/csc_projects/lizis/grb_tad/mm9_phylop_vertebrate/output.bw",
+             "/mnt/biggles/csc_projects/lizis/grb_tad/mm9_phylop_placental/output.bw")
+grbs$start_tad <- start_dists$tad_idx
+grbs$start_dist <- start_dists$dist
+grbs$end_tad <- end_dists$tad_idx
+grbs$end_dist <- end_dists$dist
+```
+
+```{r make_sml, cache=TRUE}
+start_windows <- as(resize(resize(grbs, fix = "start", width=1), 
+                           fix = "center", width = 400000), 
+                    "GRanges")
+start_windows <- start_windows[order(start_windows$start_dist)]
+start_windows <- start_windows[which(abs(start_windows$start_dist) <= 200000)]
+seqlevels(start_windows) <- seqlevelsInUse(start_windows)
+end_windows <- as(resize(resize(grbs, fix = "end", width=1), 
+                         fix = "center", width = 400000),
+                  "GRanges")
+end_windows <- end_windows[order(end_windows$end_dist)]
+seqlevels(end_windows) <- seqlevelsInUse(end_windows)
+end_windows <- end_windows[which(abs(end_windows$end_dist) <= 200000)]
+
+start_cons_sml <- ScoreMatrixList(targets, windows = start_windows, bin.num = 100, 
+                                  bin.op = "max", type = "bigWig")
+
+end_cons_sml <- ScoreMatrixList(targets, windows = end_windows, bin.num = 100, 
+                                bin.op = "max", type = "bigWig")
+```
+
+
+```{r plot_cons, cache=TRUE, dependson="make_sml"}
+names(start_cons_sml) <- names(end_cons_sml) <- c("PhastCons_P", "PhastCons_V", "PhyloP_P", "PhyloP_V")
+pal <- brewer.pal(n = 9, name = "Blues")
+start_cons_sml <- scaleScoreMatrixList(start_cons_sml, scalefun = function(x){log10(x+1)})
+end_cons_sml <- scaleScoreMatrixList(end_cons_sml, scalefun = function(x){log10(x+1)})
+
+multiHeatMatrix(start_cons_sml, col = pal)
+multiHeatMatrix(end_cons_sml, col = pal)
+```
+
+```{r plot_cons2, cache=TRUE, dependson="make_sml", fig.width = 10}
+par(mfrow = c(1,4))
+plotMeta(start_cons_sml, overlay = FALSE)
+
+par(mfrow = c(1,4))
+plotMeta(end_cons_sml, overlay = FALSE)
+```
+
+
+```{r make_cons_relative_tad, cache=TRUE, dependson="make_sml"}
+start_windows <- shift(start_windows, shift = -1*start_windows$start_dist)
+end_windows <- shift(end_windows, shift = -1*end_windows$end_dist)
+
+start_cons_sml <- ScoreMatrixList(targets, windows = start_windows, bin.num = 100, 
+                                  bin.op = "max", type = "bigWig")
+
+end_cons_sml <- ScoreMatrixList(targets, windows = end_windows, bin.num = 100, 
+                                bin.op = "max", type = "bigWig")
+names(start_cons_sml) <- names(end_cons_sml) <- c("PhastCons_P", "PhastCons_V", "PhyloP_P", "PhyloP_V")
+```
+
+```{r plot_rel_tad, cache=TRUE, dependson="make_cons_relative_tad"}
+start_cons_sml <- scaleScoreMatrixList(start_cons_sml, scalefun = function(x){log10(x+1)})
+end_cons_sml <- scaleScoreMatrixList(end_cons_sml,  scalefun = function(x){log10(x+1)})
+
+multiHeatMatrix(start_cons_sml, col = pal)
+multiHeatMatrix(end_cons_sml, col = pal)
+```
+
+```{r plot_rel_tad2, cache=TRUE, dependson="make_cons_relative_tad", fig.width=10}
+par(mfrow = c(1,4))
+plotMeta(start_cons_sml, overlay = FALSE)
+
+par(mfrow = c(1,4))
+plotMeta(end_cons_sml, overlay = FALSE)
+```
+
+#### Shuffled order of TAD-GRB distances
+
+```{r shuffle_plot, cache=TRUE}
+end_shuffle <- shuffle_sml(end_cons_sml)
+start_shuffle <- shuffle_sml(start_cons_sml)
+
+multiHeatMatrix(start_shuffle, col = pal)
+multiHeatMatrix(end_shuffle, col = pal)
+
+```
+
+## Figures for paper
+
+* CTCF per 10kb across GRBs
+* CTCF binding at TAD/GRB boundaries
+* enrichment of constitutive CTCF at GRB/TAD boundaries
+
+```{r, fig.height=5, fig.width=6, dev = c("png", "pdf")}
+par(mar)
+plot(lowess(colMeans(per10kb_grbs_mat), f = 1/50), type="l", 
+     ylab= "CTCF sites per 10kb", ylim = c(0, 0.5), bty = "l",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(size,size*2), labels=c("GRB Start", "GRB End"))
+mtext(side = 2, text = "CTCF sites per 10kb", line = 3)
+```
+
+```{r final_ctcf_per10kb, cache=TRUE, dependson="ctcf_sites_per_10kb"}
+tad_edges <- c(resize(mm9_tads, fix = "start", width = 1), 
+           resize(mm9_tads, fix = "end", width = 1))
+tad_edges <- resize(tad_edges, width = 1000000, fix = "center")
+seqlengths(tad_edges) <- seqlengths(Mmusculus)[seqlevels(tad_edges)]
+
+tad_edges_mat <- generate.basic.plot.matrix(regions = tad_edges, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+
+grb_edges <- c(resize(grbs, fix = "start", width = 1), 
+           resize(grbs, fix = "end", width = 1))
+grb_edges <- resize(grb_edges, width = 1000000, fix = "center")
+seqlengths(grb_edges) <- seqlengths(Mmusculus)[seqlevels(grb_edges)]
+
+grb_edges_mat <- generate.basic.plot.matrix(regions = grb_edges, 
+                                            norm.cov = ctcf_per_10kb_cov, size = 100)
+grb_edges_mat[776:1550,] <- t(apply(grb_edges_mat[776:1550,], 1, rev))
+```
+
+```{r, fig.width = 12, fig.height = 5, dev = c("png", "pdf")}
+par(mfrow = c(1,4), oma = c(0, 2, 2, 0), mar = c(5,3,2,1))
+# par(mfrow = c(1, 4),     # 2x2 layout
+#     oma = c(2, 3, 0, 0), # two rows of text at the outer left and bottom margin
+#     mar = c(1, 0, 0, 0), # space for one row of text at ticks and to separate plots
+#     mgp = c(2, 1, 0),    # axis label at 2 rows distance, tick labels at 1 row
+#     xpd = NA)   
+
+plot(colMeans(grb_edges_mat), type="l", ylab = "CTCF sites per 10kb",
+     main = "All GRBs",  ylim = c(0, 0.7), bty = "l",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE, xpd = NA)
+mtext(side = 2, text = "CTCF sites per 10kb", line = 3)
+axis(side=1, at=c(1, size/2, size), labels = FALSE)
+text(x = c(1, size/2, size), y = -0.1,
+     labels=c("500kb outside", "boundary", "500kb inside"),
+     srt = 45, xpd = NA, pos = 3, adj =1)
+
+mtext("All GRBs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat), type="l", 
+     main = "All TADs",  ylim = c(0, 0.7),  bty = "l",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels = FALSE)
+text(x = c(1, size/2, size), y = -0.1,
+     labels=c("500kb outside", "boundary", "500kb inside"),
+     srt = 45, xpd = NA, pos = 3, adj =1)
+mtext("All TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "GRB"),]), type="l", 
+     main = "GRB-TADs",  ylim = c(0, 0.7),  bty = "l",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels = FALSE)
+text(x = c(1, size/2, size), y = -0.1,
+     labels=c("500kb outside", "boundary", "500kb inside"),
+     srt = 45, xpd = NA, pos = 3, adj =1)
+mtext("GRB TADs", side = 3, line = 1)
+
+plot(colMeans(tad_edges_mat[which(tad_edges$class == "nonGRB"),]), type="l", 
+     main = "nonGRB-TADs",  ylim = c(0, 0.7),  bty = "l",
+    xaxt="n", xlab="", col="black", lwd=2, ann=FALSE)
+axis(side=1, at=c(1, size/2, size), labels = FALSE)
+text(x = c(1, size/2, size), y = -0.1,
+     labels=c("500kb outside", "boundary", "500kb inside"),
+     srt = 45, xpd = NA, pos = 3, adj =1)
+mtext("Non-GRB TADs", side = 3, line = 1)
+```
+
+```{r}
+for(dist in seq(10000, 120000, by=10000)){
+flanking_ctcf <- get_flanking_peaks(regions = grbs, peaks = ctcf.summary.gr, maxgap = dist)
+
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))[,1:17]))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))[,1:17]))
+
+background <- c(specific = sum(background[1:2]), 
+                intermediate = sum(background[3:15]),
+                constitutive = sum(background[16:17]))
+flanks <- c(specific = sum(flanks[1:2]), 
+            intermediate = sum(flanks[3:15]),
+            constitutive = sum(flanks[16:17]))
+
+binom_pvals <- sapply(1:3, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+grb_ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+grb_flanks <- flanks
+
+grb_stars <- rep("", 3)
+grb_stars[which(binom_pvals < 0.05)] <- "*"
+grb_stars[which(binom_pvals < 0.01)] <- "**"
+grb_stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(grb_ratio) + 0.05 * ifelse(grb_ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 3)
+cols[which(grb_ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(grb_ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+print(dist)
+print(binom_pvals)
+}
+
+```
+
+```{r}
+flanking_ctcf <- get_flanking_peaks(regions = grbs, peaks = ctcf.summary.gr, maxgap = 20000)
+
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))[,1:17]))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))[,1:17]))
+
+background <- c(specific = sum(background[1:2]), 
+                intermediate = sum(background[3:15]),
+                constitutive = sum(background[16:17]))
+flanks <- c(specific = sum(flanks[1:2]), 
+            intermediate = sum(flanks[3:15]),
+            constitutive = sum(flanks[16:17]))
+
+binom_pvals <- sapply(1:3, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+grb_ratio <- (flanks/sum(flanks)) / (background / sum(background))
+
+grb_flanks <- flanks
+
+grb_stars <- rep("", 3)
+grb_stars[which(binom_pvals < 0.05)] <- "*"
+grb_stars[which(binom_pvals < 0.01)] <- "**"
+grb_stars[which(binom_pvals < 0.001)] <- "***"
+star_pos <- log2(grb_ratio) + 0.05 * ifelse(grb_ratio > 1, 1, -1)
+
+
+cols <- rep("grey", 3)
+cols[which(grb_ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(grb_ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+cat(binom_pvals)
+# bp <- barplot(log2(grb_ratio), col = cols, border = NA, ylim = c(-0.45, 1))
+# text(stars, x = bp, y = star_pos)
+# 
+# bp <- barplot(grb_ratio, col = "grey", border = NA, ylim = c(0,2))
+# text(grb_stars, x = bp, y = grb_ratio + 0.05)
+# abline(h = 1, lty = 2)
+```
+
+```{r, fig.height=5, fig.width=6, dev=c("png", "pdf")}
+flanking_ctcf <- get_flanking_peaks(regions = mm9_tads[mm9_tads$class=="nonGRB"], peaks = ctcf.summary.gr, maxgap = 10000)
+
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))[,1:17]))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))[,1:17]))
+
+background <- c(specific = sum(background[1:2]), 
+                intermediate = sum(background[3:15]),
+                constitutive = sum(background[16:17]))
+flanks <- c(specific = sum(flanks[1:2]), 
+            intermediate = sum(flanks[3:15]),
+            constitutive = sum(flanks[16:17]))
+
+binom_pvals <- sapply(1:3, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+  })
+
+tads_ratio <- (flanks/sum(flanks)) / (background / sum(background))
+tads_flanks <- flanks
+tads_stars <- rep("", 3)
+tads_stars[which(binom_pvals < 0.05)] <- "*"
+tads_stars[which(binom_pvals < 0.01)] <- "**"
+tads_stars[which(binom_pvals < 0.001)] <- "***"
+tads_star_pos <- log2(tads_ratio) + 0.05 * ifelse(tads_ratio > 1, 1, -1)
+
+cols <- rep("grey", 3)
+cols[which(tads_ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(tads_ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+cat(binom_pvals)
+```
+
+```{r}
+flanking_ctcf <- get_flanking_peaks(regions = mm9_tads[mm9_tads$class=="GRB"], peaks = ctcf.summary.gr, maxgap = 10000)
+
+background <- table(rowSums(as.matrix(mcols(ctcf.summary.gr))[,1:17]))
+flanks <- table(rowSums(as.matrix(mcols(flanking_ctcf))[,1:17]))
+
+background <- c(specific = sum(background[1:2]), 
+                intermediate = sum(background[3:15]),
+                constitutive = sum(background[16:17]))
+flanks <- c(specific = sum(flanks[1:2]), 
+            intermediate = sum(flanks[3:15]),
+            constitutive = sum(flanks[16:17]))
+
+binom_pvals <- sapply(1:3, function(i){
+  p <- binom.test(x = flanks[i], n = sum(flanks), 
+                  p = background[i]/sum(background))
+  return(p$p.value)
+})
+
+tads2_ratio <- (flanks/sum(flanks)) / (background / sum(background))
+tads2_flanks <- flanks
+tads2_stars <- rep("", 3)
+tads2_stars[which(binom_pvals < 0.05)] <- "*"
+tads2_stars[which(binom_pvals < 0.01)] <- "**"
+tads2_stars[which(binom_pvals < 0.001)] <- "***"
+tads2_star_pos <- log2(tads2_ratio) + 0.05 * ifelse(tads2_ratio > 1, 1, -1)
+
+cols <- rep("grey", 3)
+cols[which(tads2_ratio > 1 & binom_pvals < 0.05)] <- muted("red")
+cols[which(tads2_ratio < 1 & binom_pvals < 0.05)] <- muted("blue")
+
+cat(binom_pvals)
+
+```
+
+
+```{r, fig.height=5, fig.width=8, dev=c("png", "pdf")}
+# bp <- barplot(log2(tads_ratio), col = cols, border = NA, ylim = c(-0.45, 1))
+# text(stars, x = bp, y = star_pos)
+
+##PLOT
+
+par(mfrow = c(1,3), mar = c(5,4,4,0))
+bp <- barplot(grb_ratio, col = "grey", border = NA, ylim = c(0,2), 
+              main = "GRB boundaries", ylab = "Fold enrichment", cex.names = 0.7)
+text(grb_stars, x = bp, y = grb_ratio + 0.05)
+abline(h = 1, lty = 2)
+
+bp <- barplot(tads_ratio, col = "grey", border = NA, ylim = c(0,2), 
+              main = "non devTAD boundaries", cex.names = 0.7)
+text(tads_stars, x = bp, y = tads_ratio + 0.05)
+abline(h = 1, lty = 2)
+
+bp <- barplot(tads2_ratio, col = "grey", border = NA, ylim = c(0,2), 
+              main = "devTAD boundaries", cex.names = 0.7)
+text(tads2_stars, x = bp, y = tads2_ratio + 0.05)
+abline(h = 1, lty = 2)
+```
+
+Test % constit at GRBs vs % constit at non-GRB TAD boundaries
+
+```{r}
+tab <- matrix(c(sum(grb_flanks[1:2]), grb_flanks[3],
+                    sum(tads_flanks[1:2]), tads_flanks[3]),
+                    nrow = 2)
+row.names(tab) <- c("non-constit", "constit")
+colnames(tab) <- c("GRB", "nonGRB-TAD")
+
+kable(tab)
+
+chisq.test(tab)
+```
+Test % constit at GRB TAD boundaries vs % constit at non-GRB TAD boundaries
+
+```{r}
+tab <- matrix(c(sum(tads2_flanks[1:2]), tads2_flanks[3],
+                    sum(tads_flanks[1:2]), tads_flanks[3]),
+                    nrow = 2)
+row.names(tab) <- c("non-constit", "constit")
+colnames(tab) <- c("GRB-TAD", "nonGRB-TAD")
+
+kable(tab)
+
+chisq.test(tab)
+
+```
+## Session details
+
+This report was generated on `r format(Sys.time(), "%a %b %d %Y at %X")`. 
+```{r session_info, include=TRUE}
+sessionInfo()
+```
+  

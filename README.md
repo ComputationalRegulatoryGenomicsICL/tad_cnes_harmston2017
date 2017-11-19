@@ -29,5 +29,5 @@ repeat_analysis.Rmd | Figure 4 | Figure S8
 chromatin_colour.Rmd | Figure 4 | Figure S8
 ctcf_analysis.Rmd | Figure 4 | Figure S8
 dev_analysis.Rmd | Figure 4 |  Figure S9
-DifferentialExpression |  | Figure S10
+DifferentialExpression.Rmd |  | Figure S10
 genome_comparison.Rmd | Figure 5 | 
