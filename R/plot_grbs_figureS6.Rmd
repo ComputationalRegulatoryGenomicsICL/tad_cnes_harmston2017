@@ -189,7 +189,7 @@ binsize= 1000
 
 ```{r}
 #dm3.ens.db <- makeTxDbFromUCSC(genome="dm3", tablename="ensGene")
-#saveDb(dm3.ens.db, file="~/Dropbox/tads_grbs/data/dm3_ensembl.sqlite")
+#saveDb(dm3.ens.db, file="data/dm3_ensembl.sqlite")
 dm3.ens.db = loadDb("data/dm3_ensembl.sqlite")
 ```
 

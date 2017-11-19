@@ -1,0 +1,275 @@
+---
+title: "fourc_plots"
+author: "Nathan Harmston"
+date: "21 February 2017"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./',
+               echo=!short, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r echo=FALSE}
+library(Gviz)
+library(GenomicFeatures)
+library(biomaRt)
+library(ggplot2)
+library(GenomicInteractions)
+library(rtracklayer)
+```
+
+Plots 4C plots around the HpxD locus in mouse.
+
+```{r}
+mm9.ens.db = loadDb("mm9_ensembl.sqlite")
+ens.genes = genes(mm9.ens.db)
+mouse = useMart(dataset="mmusculus_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="may2012.archive.ensembl.org")
+
+ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:19, sep=""), "chrX", "chrY")]
+bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "mgi_symbol", "status"), mart=mouse, filters="ensembl_gene_id", values=ens.genes$gene_id, uniqueRows=TRUE)
+ens.genes$mgi_symbol = bm.annotations$mgi_symbol[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$gene_biotype = bm.annotations$gene_biotype[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$description = bm.annotations$description[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes$status = bm.annotations$status[ match(ens.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:22, sep=""), "chrX", "chrY")]
+ens.genes = ens.genes[ ens.genes$gene_biotype %in% c( "protein_coding", "miRNA" ) ]
+```
+
+```{r}
+
+library(GenomicInteractions)
+
+brain_d13_fourc = readRDS("data/fourc/GSE31659_fourc_brain_d13_grg.rds")
+brain_d4_fourc = readRDS("data/fourc/GSE31659_fourc_brain_d4_grg.rds")
+limb_d13_fourc = readRDS("data/fourc/GSE31659_fourc_limb_d13_grg.rds")
+limb_d4_fourc = readRDS("data/fourc/GSE31659_fourc_limb_d4_grg.rds")
+
+brain_d13_fourc$score = brain_d13_fourc$logpvalue
+brain_d4_fourc$score = brain_d4_fourc$logpvalue
+limb_d13_fourc$score = limb_d13_fourc$logpvalue
+limb_d4_fourc$score = limb_d4_fourc$logpvalue
+
+hoxd13 = ens.genes["ENSMUSG00000001819"]
+hoxd4 =  ens.genes["ENSMUSG00000042464"]
+
+genome = "mm9"
+chr="chr2"
+start = 73381829
+end = 75607496
+
+tiling.array = GRanges('chr2', IRanges(73746471, 75507828))
+tiling.arrayTrack = AnnotationTrack(tiling.array, stacking="dense", genome=genome, chromosome=chr, name="array span")
+displayPars(homerTadTrack) = list(col="black", fill="gray50")
+
+brain_d13_fourc.gi = GenomicInteractions(anchor1=rep(resize(hoxd13, fix="start", 1), length(brain_d13_fourc)),
+                              anchor2 = brain_d13_fourc,
+                              counts=1, p.value = brain_d13_fourc$pvalue)
+brain_d4_fourc.gi = GenomicInteractions(anchor1=rep(resize(hoxd4, fix="start", 1), length(brain_d4_fourc)),
+                              anchor2 = brain_d4_fourc,
+                              counts=1, p.value = brain_d4_fourc$pvalue)
+limb_d13_fourc.gi = GenomicInteractions(anchor1=rep(resize(hoxd13, fix="start", 1), length(limb_d13_fourc)),
+                              anchor2 = limb_d13_fourc,
+                              counts=1, p.value = limb_d13_fourc$pvalue)
+limb_d4_fourc.gi = GenomicInteractions(anchor1=rep(resize(hoxd4, fix="start", 1), length(limb_d4_fourc)),
+                              anchor2 = limb_d4_fourc,
+                              counts=1, p.value = limb_d4_fourc$pvalue)
+
+intTrack_brain_d13_fourc = InteractionTrack(brain_d13_fourc.gi[brain_d13_fourc.gi$p.value < 0.1])
+displayPars(intTrack_brain_d13_fourc) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+intTrack_brain_d4_fourc = InteractionTrack(brain_d4_fourc.gi[brain_d4_fourc.gi$p.value < 0.1])
+displayPars(intTrack_brain_d4_fourc) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+intTrack_limb_d13_fourc = InteractionTrack(limb_d13_fourc.gi[limb_d13_fourc.gi$p.value < 0.1])
+displayPars(intTrack_limb_d13_fourc) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+intTrack_limb_d4_fourc = InteractionTrack(limb_d4_fourc.gi[limb_d4_fourc.gi$p.value < 0.1])
+displayPars(intTrack_limb_d4_fourc) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+
+axisTrack <- GenomeAxisTrack()
+
+
+cneTrack = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="squish", genome=genome, chromosome=chr, name="35/50")
+displayPars(cneTrack) = list(col="red", col.line="black")
+
+
+hesc.dixon.tads = import("./data/tads/dixon/mm9/mm9.esc.total.HindIII.combined.domain.bed")
+hesc.homer.tads = import("./data/tads/homer/mm9/mESC-ALL-TADs.domains.bed")
+strand(hesc.homer.tads) = "*"
+
+homerTadTrack = AnnotationTrack(hesc.homer.tads, stacking="dense", genome=genome, chromosome=chr, name="ESC HOMER")
+displayPars(homerTadTrack) = list(col="black", fill="gray50")
+
+dixonTadTrack = AnnotationTrack(hesc.dixon.tads, stacking="dense", genome=genome, chromosome=chr, name="ESC DIXON")
+displayPars(dixonTadTrack) = list(col="black", fill="gray50")
+
+grbs = import.bed("data/grbs/mm9_galGal4_70_50/mm9_galGal4_70_50.final.bed")
+grbTrack = AnnotationTrack(grbs, chromosome = chr, name="FINAL")
+displayPars(grbTrack) = list(fill="coral", col.line="black", col="black")
+
+geneTrack = AnnotationTrack(ens.genes, genome="mm9", name="Ensembl Genes", id=ifelse(ens.genes$mgi_symbol=="", " ", ens.genes$mgi_symbol))
+displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+
+galGal4.70.50.density.bw = import("data/densities/HCNE_density_mm9_galGal4_70pc_50col.bigWig")
+
+density_chicken <- DataTrack(range = galGal4.70.50.density.bw, genome = "mm9", 
+                                      type = "horizon", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,12),
+                                      horizon.origin=0, horizon.scale=6)
+
+tmp = brain_d13_fourc
+elementMetadata(tmp) = NULL
+tmp$score = brain_d13_fourc$logpvalue
+brain_d13_fourc.track <- DataTrack(range = tmp, genome = "mm9", 
+                                      type = "histogram", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      separator=1, lwd=0.5, ylim=c(0,7))
+tmp = brain_d4_fourc
+elementMetadata(tmp) = NULL
+tmp$score = brain_d4_fourc$logpvalue
+brain_d4_fourc.track <- DataTrack(range = tmp, genome = "mm9", 
+                                      type = "histogram", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      separator=1, lwd=0.5, ylim=c(0,7))
+tmp = limb_d13_fourc
+elementMetadata(tmp) = NULL
+tmp$score = limb_d13_fourc$logpvalue
+limb_d13_fourc.track <- DataTrack(range = tmp, genome = "mm9", 
+                                      type = "histogram", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      separator=1, lwd=0.5, ylim=c(0,7))
+tmp = limb_d4_fourc
+elementMetadata(tmp) = NULL
+tmp$score = limb_d4_fourc$logpvalue
+limb_d4_fourc.track <- DataTrack(range = tmp, genome = "mm9", 
+                                      type = "histogram", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      separator=1, lwd=0.5, ylim=c(0,7))
+
+plotTracks(list(axisTrack,
+                tiling.arrayTrack,
+                limb_d13_fourc.track,
+                brain_d13_fourc.track,
+                limb_d4_fourc.track,
+                brain_d4_fourc.track,
+                #cneTrack,
+                density_chicken,
+                homerTadTrack,
+                dixonTadTrack,
+                grbTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end)
+
+plotTracks(list(axisTrack,
+                tiling.arrayTrack,
+                intTrack_limb_d13_fourc,
+                intTrack_brain_d13_fourc,
+                intTrack_limb_d4_fourc,
+                intTrack_brain_d4_fourc,
+                cneTrack,
+                density_chicken,
+                homerTadTrack,
+                dixonTadTrack,
+                grbTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end)
+
+```
+
+
+```{r}
+brain_d13_fourc = readRDS("data/fourc/GSE31659_fourc_brain_d13_grg.rds")
+brain_d4_fourc = readRDS("data/fourc/GSE31659_fourc_brain_d4_grg.rds")
+limb_d13_fourc = readRDS("data/fourc/GSE31659_fourc_limb_d13_grg.rds")
+limb_d4_fourc = readRDS("data/fourc/GSE31659_fourc_limb_d4_grg.rds")
+
+a = reduce(cnes[unique(subjectHits(findOverlaps(unique(fragments.grg[brain_d13_fourc[brain_d13_fourc$pvalue < 0.1]$id]), cnes)))])
+b = reduce(cnes[unique(subjectHits(findOverlaps(unique(fragments.grg[brain_d4_fourc[brain_d4_fourc$pvalue < 0.1]$id]), cnes)))])
+
+c = reduce(cnes[unique(subjectHits(findOverlaps(unique(fragments.grg[limb_d13_fourc[limb_d13_fourc$pvalue < 0.1]$id]), cnes)))])
+d = reduce(cnes[unique(subjectHits(findOverlaps(unique(fragments.grg[limb_d4_fourc[limb_d4_fourc$pvalue < 0.1]$id]), cnes)))])
+
+
+aTrack = AnnotationTrack(subsetByOverlaps(a, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr, name="35/50")
+displayPars(aTrack) = list(col="red", col.line="black")
+bTrack = AnnotationTrack(subsetByOverlaps(b, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr, name="35/50")
+displayPars(bTrack) = list(col="red", col.line="black")
+cTrack = AnnotationTrack(subsetByOverlaps(c, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr, name="35/50")
+displayPars(cTrack) = list(col="red", col.line="black")
+dTrack = AnnotationTrack(subsetByOverlaps(d, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="dense", genome=genome, chromosome=chr, name="35/50")
+displayPars(dTrack) = list(col="red", col.line="black")
+
+
+
+plotTracks(list(axisTrack,
+                tiling.arrayTrack,
+                intTrack_limb_d13_fourc,
+                cTrack,
+                intTrack_brain_d13_fourc,
+                aTrack,
+                intTrack_limb_d4_fourc,
+                dTrack,
+                intTrack_brain_d4_fourc,
+                bTrack,
+                #cneTrack,
+                density_chicken,
+                homerTadTrack,
+                dixonTadTrack,
+                grbTrack,
+                geneTrack
+                ), chromosome=chr, from=start, to=end)
+```
+
+```{r finalplot}
+plotTracks(list(axisTrack,
+                limb_d13_fourc.track,
+                cTrack,
+                brain_d13_fourc.track,
+                 aTrack,
+                limb_d4_fourc.track,
+                dTrack,
+                brain_d4_fourc.track,
+                bTrack,
+                #cneTrack,
+                density_chicken,
+                homerTadTrack,
+                dixonTadTrack,
+                grbTrack,
+                geneTrack,
+                tiling.arrayTrack
+                ), chromosome=chr, from=start, to=end)
+```
+
+```{r}
+sessionInfo()
+```

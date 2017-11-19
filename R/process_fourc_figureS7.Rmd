@@ -75,6 +75,8 @@ fragments.grg <- GRanges(
 probes.grg <- matchProbesToFragments(probes.grg, fragments.grg)
 ```
 
+Rerun with different values of tissue and bait to generate all required datasets
+
 ```{r}
 tissue = "limb"
 bait = "d4"

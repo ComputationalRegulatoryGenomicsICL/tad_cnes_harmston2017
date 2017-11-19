@@ -25,7 +25,8 @@ grbs_h3k27ac.Rmd |  | Figure S4
 ContactDomains.Rmd | | Figure S5
 plot_grbs_figure3.Rmd | Figure 3 | 
 plot_grbs_figureS6.Rmd | | Figure S6
-process_fourc_figureS7 | | Figure S7a | processing of 4C data 
+process_fourc_figureS7.Rmd | | Figure S7a | processing of 4C data 
+plot_fourc_figureS7.Rmd | | Figure S7a | plotting of 4C data -depends on process_fourc_figureS7.Rmd
 plot_spsix_figureS7.Rmd | | Figure S7b
 repeat_analysis.Rmd | Figure 4 | Figure S8
 chromatin_colour.Rmd | Figure 4 | Figure S8
