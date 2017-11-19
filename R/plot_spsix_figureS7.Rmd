@@ -1,0 +1,204 @@
+---
+title: "strPur4_six"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='./figures/', dpi=300,
+               echo=TRUE, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+
+```{r}
+library(Gviz)
+  library(stringr)
+library(GenomicFeatures)
+library(biomaRt)
+library(ggplot2)
+library(GenomicInteractions)
+library(rtracklayer)
+
+options(ucscChromosomeNames=FALSE)
+strPur4.glean.db = makeTxDbFromGFF("SpBase3.1_build7.gff3/GLEAN-UTR-3.1_scaffold143.gff3")
+ens.genes = genes(strPur4.glean.db)
+ens.genes$name = ""
+ens.genes$name[ens.genes$gene_id == "SPU_017379"] = "Sp-Six1/2"
+ens.genes$name[ens.genes$gene_id == "SPU_018908"] = "Sp-Six3"
+ens.genes$name[ens.genes$gene_id == "SPU_017380"] = "Sp-Six4"
+
+import.cnes = function(fn, target){
+    tmp = str_split(fn, "/")
+    tmp = str_split(tmp[[1]][ length(tmp[[1]])], "_")
+    species1 = tmp[[1]][2]
+    species2 = tmp[[1]][3]
+    tmp  = read.table(fn)
+  
+    if(target == species1){
+        return( GRanges(tmp[,1], IRanges(tmp[,2]+1, tmp[,3]), name=paste(tmp[,4], paste(tmp[,5]+1, tmp[,6], sep="-"), sep=":"), origin.chr=as.character(tmp[,4])) )
+    }else{
+        return( GRanges(tmp[,4], IRanges(tmp[,5]+1, tmp[,6]), name=paste(tmp[,1], paste(tmp[,2]+1, tmp[,3], sep="-"), sep=":"), origin.chr=as.character(tmp[,1])) )
+    }
+}
+```
+
+```{r six_figure}
+genome = "strPur4"
+
+chr="Scaffold143"
+start = 0
+end = 1300000
+axisTrack <- GenomeAxisTrack()
+
+geneTrack = AnnotationTrack(ens.genes, genome=genome, name="Genes", id=ifelse(ens.genes$name=="", " ", ens.genes$name))
+displayPars(geneTrack) <- list(showFeatureId=TRUE, fill = "deepskyblue", fontcolor.feature = "black", fontsize=9, just.group="below")
+
+six1.bg = import("data/fourc/skarmeta_4C/GSM1634544_Spsix1Rep_30frags_smooth.bedGraph")
+
+six4.bw = import("data/fourc/skarmeta_4C/GSM1634545_Spsix4_30frags_smooth.bedGraph")
+
+six4.repbw = import("data/fourc/skarmeta_4C/GSM1634546_Spsix4Rep_30frags_smooth.bedGraph")
+
+six6.bw = import("data/fourc/skarmeta_4C/GSM1634547_Spsix6_30frags_smooth.bedGraph")
+
+six6.repbw = import("data/fourc/skarmeta_4C/GSM1634548_Spsix6Rep_30frags_smooth.bedGraph")
+
+options(ucscChromosomeNames=FALSE)
+density_six1.bg <- DataTrack(range = six1.bg, type="h", genome = "strPur4",chromosome = chr,
+                                      separator=1, lwd=1, name="Six1")
+density_six4.bw <- DataTrack(range = six4.bw, type="h", genome = "strPur4",chromosome = chr,
+                                      separator=1, lwd=1, name="Six4")
+density_six6.bw <- DataTrack(range = six6.bw, type="h", genome = "strPur4",chromosome = chr,
+                                      separator=1, lwd=1, name="Six6")
+
+
+findOverlaps(six1.bg, GRanges(chr, IRanges(start,end)))
+
+cnes  = import.cnes("data/cnes/cne2wBf_lytVar22_strPur31_35_50", target="strPur31")
+cneTrack_1 = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="squish", genome=genome, chromosome=chr, name="35/50")
+displayPars(cneTrack_1) = list(col="red", col.line="black")
+cnes.cov = coverage(cnes)
+k = 20000 
+tmp.score = runmean(cnes.cov[["Scaffold143"]], k=k, endrule="drop")
+st = 1 + (k / 2)
+ed = 1343889 - (k/2) + 1
+cne_1 = GRanges("Scaffold143", IRanges(st:ed, width=1), score=tmp.score)
+#spamalot = DataTrack(range = cne_1, type="h", genome = "strPur4",chromosome = chr,
+#                                      separator=1, lwd=1,  ylim=c(0,0.4), name="")
+spamalot = DataTrack(range = cne_1, genome = "hg19", 
+                                      type = "horizon", chromosome = chr, 
+                                      name = "70%/50bp",  
+                                      fill.horizon = c("#B41414", "#E03231", "#F7A99C", "yellow", "orange", "red"), 
+                                      separator=1, lwd=0.5, ylim=c(0,0.45),
+                                      horizon.origin=0, horizon.scale=0.4)
+
+cnes  = import.cnes("data/cnes/cne2wBf_lytVar22_strPur31_40_50", target="strPur31")
+cneTrack_2 = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="squish", genome=genome, chromosome=chr, name="40/50")
+displayPars(cneTrack_2) = list(col="red", col.line="black")
+#cne_2 = GRanges("Scaffold143", IRanges(1:1303890, width=1), score=runmean(cnes.cov[["Scaffold143"]], k=40000))
+
+cnes  = import.cnes("data/cnes/cne2wBf_lytVar22_strPur31_45_50", target="strPur31")
+cneTrack_3 = AnnotationTrack(subsetByOverlaps(cnes, GRanges(chr, IRanges(start - 500000, end + 500000))), stacking="squish", genome=genome, chromosome=chr, name="45/50")
+displayPars(cneTrack_3) = list(col="red", col.line="black")
+#cne_3 = GRanges("Scaffold143", IRanges(1:1303890, width=1), score=runmean(cnes.cov[["Scaffold143"]], k=40000))
+
+
+
+x = read.delim("data/fourc/skarmeta_4C/SpSix1_targets.txt", skip=1, header=FALSE)
+colnames(x)=c("seq", "start", "end", "pval")
+x.gr = GRanges(x$seq, IRanges(x$start, x$end))
+x.gr = x.gr[seqnames(x.gr) == "Scaffold143"]
+x.filt = x[x$seq == "Scaffold143",]
+six1.gi = GenomicInteractions(anchor_one=rep(GRanges("Scaffold143", IRanges(start=769564, width=10)), length(x.gr)),
+                                     anchor_two = x.gr,
+                                                          counts=1, p.value = x.filt$pval)
+                                      
+
+intTrack_six1 = InteractionTrack(six1.gi)
+displayPars(intTrack_six1) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+x = read.delim("data/fourc/skarmeta_4C/SpSix4_targets.txt", skip=1, header=FALSE)
+colnames(x)=c("seq", "start", "end", "pval")
+x.gr = GRanges(x$seq, IRanges(x$start, x$end))
+x.gr = x.gr[seqnames(x.gr) == "Scaffold143"]
+x.filt = x[x$seq == "Scaffold143",]
+six4.gi = GenomicInteractions(anchor_one=rep(GRanges("Scaffold143", IRanges(start=692765, width=10)), length(x.gr)),
+                                     anchor_two = x.gr,
+                                                          counts=1, p.value = x.filt$pval)
+                                      
+
+intTrack_six4 = InteractionTrack(six4.gi)
+displayPars(intTrack_six4) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+x = read.delim("data/fourc/skarmeta_4C/pSix6_targets.txt", skip=1, header=FALSE)
+colnames(x)=c("seq", "start", "end", "pval")
+x.gr = GRanges(x$seq, IRanges(x$start, x$end))
+x.gr = x.gr[seqnames(x.gr) == "Scaffold143"]
+x.filt = x[x$seq == "Scaffold143",]
+six6.gi = GenomicInteractions(anchor_one=rep(GRanges("Scaffold143", IRanges(start=1022197, width=10)), length(x.gr)),
+                                     anchor_two = x.gr,
+                                                          counts=1, p.value = x.filt$pval)
+                                      
+
+intTrack_six6 = InteractionTrack(six6.gi)
+displayPars(intTrack_six6) = list(col.interactions="red", 
+                                      col.anchors.fill ="blue",
+                                      anchor.height=0.0001,
+                                      plot.anchors=FALSE,
+                                      interaction.dimension="height", 
+                                      interaction.measure ="p.value",
+                                  interaction.dimension.transform = "log")
+
+ctcf.gr = GRanges("Scaffold143", IRanges(start=c(896688,892778,888274,883271), end=c(896712,892812,888298,883297)))
+ctcfTrack = AnnotationTrack(ctcf.gr, stacking="dense", genome=genome, chromosome=chr, name="CTCF")
+
+plotTracks(list(axisTrack,
+                intTrack_six1,
+                density_six1.bg,
+                #intTrack_six4,
+                #density_six4.bw,
+                intTrack_six6,
+                density_six6.bw,
+                cneTrack_3, 
+                cneTrack_2, 
+                cneTrack_1, 
+                ctcfTrack,
+                geneTrack), chromosome=chr, from=start, to=end, sizes=c(0.05, 0.07, 0.08, 0.07, 0.08, 0.1, 0.1, 0.1, 0.05, 0.15))
+```
+
+```{r}
+plotTracks(list(axisTrack,
+                intTrack_six1,
+                density_six1.bg,
+                #intTrack_six4,
+                #density_six4.bw,
+                intTrack_six6,
+                density_six6.bw,
+                cneTrack_1, 
+                spamalot,
+                ctcfTrack,
+                geneTrack), chromosome=chr, from=600000, to=end)#, sizes=c(0.05, 0.07, 0.08, 0.07, 0.08, 0.1, 0.1, 0.1, 0.05, 0.15))
+
+
+```
+
+
+
+This report was generated on `r format(Sys.time(), "%a %b %d %Y at %X")`. 
+```{r session_info, include=TRUE}
+sessionInfo()
+```
+  
