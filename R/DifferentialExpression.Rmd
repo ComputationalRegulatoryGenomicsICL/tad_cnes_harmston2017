@@ -1,0 +1,159 @@
+---
+title: "DifferentialExpression"
+author: "Nathan Harmston"
+date: "21 July 2016"
+output: html_document
+---
+
+
+```{r global_options, echo=FALSE}
+  short=FALSE #if short==TRUE, do not echo code chunks
+  debug=FALSE
+  knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figures/',
+               echo=!short, warning=debug, message=debug, dev=c("png", "pdf"))
+```
+
+```{r}
+library("DESeq2")
+library("knitr")
+library("GenomicFeatures")
+library("RColorBrewer")
+library("gplots")
+library("biomaRt")
+library("grid")
+library("gridExtra")
+library("ggplot2")
+library("GOstats")
+library("lattice")
+library("reshape")
+library("geneplotter")
+library("EDASeq")
+library("Repitools")
+library("mvoutlier")
+library("BSgenome.Hsapiens.UCSC.hg19")
+
+```
+
+
+```{r}
+hg.gtf.db <- makeTxDbFromGFF( "/Users/nph/Documents/workspace/genomes/hg19/Homo_sapiens.GRCh37.75.chr.gtf", format="gtf" )
+ensembl.genes = genes(hg.gtf.db)
+human = useMart(dataset="hsapiens_gene_ensembl", biomart="ENSEMBL_MART_ENSEMBL", host="feb2014.archive.ensembl.org")
+bm.annotations = getBM(attributes=c("ensembl_gene_id", "gene_biotype", "hgnc_symbol", "description", "status"), mart=human, filters="ensembl_gene_id", values=ensembl.genes$gene_id, uniqueRows=TRUE)
+ensembl.genes$hgnc_symbol = bm.annotations$hgnc_symbol[ match(ensembl.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ensembl.genes$gene_biotype = bm.annotations$gene_biotype[ match(ensembl.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ensembl.genes$description = bm.annotations$description[ match(ensembl.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+ensembl.genes$status = bm.annotations$status[ match(ensembl.genes$gene_id, bm.annotations$ensembl_gene_id) ]
+#ens.genes = ens.genes[ seqnames(ens.genes) %in% c(paste("chr", 1:22, sep=""), "chrX", "chrY")]
+#ens.genes = ens.genes[ ens.genes$gene_biotype %in% c( "protein_coding", "miRNA") ]
+  
+exonsByGene <- GenomicFeatures::exonsBy( hg.gtf.db, by="gene" )
+exonsByGene <- reduce(exonsByGene)
+hg19.gene.length = sum(width(exonsByGene))
+
+experimental.metadata = data.frame(sample = c("h1_1", "h1_2", "me_1", "me_2",
+                                              "ms_1", "ms_2",
+                                              "np_1", "np_2", "tb_1", "tb_2"),
+                                              
+                                   lineage=c("h1", "h1", "me", "me", "ms", "ms", "np", "np", "tb", "tb"))
+  
+htseq.suffix = ".htseq_union.txt"
+
+sampleTable <- data.frame(sampleName = experimental.metadata$sample,
+                          fileName = paste(experimental.metadata$sample, htseq.suffix, sep=""),
+                          lineage = experimental.metadata$lineage)
+
+basedir="~/Dropbox/Topological organisation of genomic regulatory blocks/compartments/rna-seq/"
+ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
+                                       directory = basedir,
+                                       design= ~ lineage)
+
+ddsHTSeq =  ddsHTSeq[row.names(counts(ddsHTSeq)) %in% ensembl.genes$gene_id[as.character(seqnames(ensembl.genes)) != "chrM"],]
+ddsHTSeq =  ddsHTSeq[!(row.names(counts(ddsHTSeq)) %in% ensembl.genes$gene_id[ ensembl.genes$gene_biotype %in% c("Mt_tRNA", "Mt_rRNA", "rRNA", "snoRNA", "snRNA" )]),]
+
+filter <- apply(counts(ddsHTSeq),1,function(x) mean(x)>10)
+ddsHTSeq = ddsHTSeq[filter, ]
+
+ddsHTSeq <- estimateSizeFactors(ddsHTSeq) #, normMatrix=exp(-1 * offst(dataWithin)))
+ddsHTSeq <- estimateDispersions(ddsHTSeq)
+
+rld <- rlog(ddsHTSeq)
+sampleDists <- dist( t( assay(rld) ) )
+plot(hclust(sampleDists))
+
+(data <- plotPCA(rld, intgroup = c( "lineage"), returnData=TRUE))
+percentVar <- round(100 * attr(data, "percentVar"))
+ggplot(data, aes(PC1, PC2, color=lineage, shape=lineage)) + geom_point(size=3) +
+  scale_x_continuous(paste0("PC1: ",percentVar[1],"% variance")) +
+  scale_y_continuous(paste0("PC2: ",percentVar[2],"% variance")) +
+  coord_fixed() + theme_classic()
+
+ddsHTSeq = nbinomLRT(ddsHTSeq, full= ~1 + lineage, reduced = ~ 1 )
+
+results = results(ddsHTSeq, filter=rowMeans(counts(ddsHTSeq, normalized=TRUE)), 
+                          alpha=0.1)
+results$hgnc_symbol = ensembl.genes$hgnc_symbol[match(row.names(results), ensembl.genes$gene_id)]
+results$description = ensembl.genes$description[match(row.names(results), ensembl.genes$gene_id)]
+results$gene_biotype = ensembl.genes$gene_biotype[match(row.names(results), ensembl.genes$gene_id)]
+results$entrezgene = ensembl.genes$entrezgene[match(row.names(results), ensembl.genes$gene_id)]
+
+results = results[order(results$padj),]
+
+
+results.pairwise = list()
+for (x in 1:(length(levels(ddsHTSeq$lineage))-1)){
+    results.pairwise[[levels(ddsHTSeq$lineage)[x]]] = list()
+    for (y in (x+1):(length(levels(ddsHTSeq$lineage)))){
+      if(x!=y){
+        tmp.results = results(ddsHTSeq, 
+                              contrast=c("lineage", levels(ddsHTSeq$lineage)[y], levels(ddsHTSeq$lineage)[x]), 
+                              pAdjustMethod="fdr", test="Wald",
+                              filter=rowMeans(counts(ddsHTSeq[,
+                                      as.character(experimental.metadata$sample[ 
+                                                 experimental.metadata$lineage==levels(ddsHTSeq$lineage)[x] |
+                                                   experimental.metadata$lineage == levels(ddsHTSeq$lineage)[y]         
+                                                 ])], normalized=TRUE)), alpha=0.1)
+        tmp.results$hgnc_symbol = ensembl.genes$hgnc_symbol[match(row.names(tmp.results), ensembl.genes$gene_id)]
+        tmp.results$description = ensembl.genes$description[match(row.names(tmp.results), ensembl.genes$gene_id)]
+        tmp.results$gene_biotype = ensembl.genes$gene_biotype[match(row.names(tmp.results), ensembl.genes$gene_id)]
+        tmp.results = tmp.results[order(tmp.results$padj),]
+        results.pairwise[[levels(ddsHTSeq$lineage)[x]]][[levels(ddsHTSeq$lineage)[y]]] = tmp.results
+        }
+    }
+}
+
+ncrpk = counts(ddsHTSeq, normalized=TRUE) / (hg19.gene.length[rownames( counts(ddsHTSeq) )] / 1000)
+ncscalingfactor = colSums(ncrpk) / 1e6
+nctpm = sweep(ncrpk, 2, ncscalingfactor, "/")
+
+
+for( i in row.names(counts(ddsHTSeq))){
+  counts = data.frame(
+            lineage = sampleTable$lineage,
+            counts = nctpm[i, ])
+
+  main = ensembl.genes$hgnc_symbol[ensembl.genes$gene_id == i]
+  main = paste(i, ensembl.genes$hgnc_symbol[ensembl.genes$gene_id == i], 
+               "\npadj=",  format(results[i,]$padj, scientific=TRUE), 
+               sep=" ")
+
+  x = ggplot(counts, aes(x=lineage, y=counts, group=lineage)) + geom_boxplot(outlier.colour = NA)  + theme_classic() + scale_x_discrete("Timepoint", expand=c(0.01,0.01)) + ggtitle(main) + theme(plot.title = element_text(lineheight=.8, face="bold"), plot.margin=unit(c(0.5,0.5,0.5,0.5),"cm"), axis.line.y = element_line(size = 1, colour = "black"), axis.text.x = element_text(size=14), axis.text.y = element_text(size=14), panel.grid.minor.x=element_blank())  + scale_y_continuous("TPM", expand=c(0,0))  + geom_point(data=counts, aes(x=lineage, y=counts, group=lineage), colour="red", position = position_jitter(width = 0.2),size=2)
+  
+  ggsave(paste("tpm_", i, "_timeseries_", ensembl.genes$hgnc_symbol[ensembl.genes$gene_id == i], ".pdf", sep=""), x, device=cairo_pdf)
+}
+
+
+```
+
+```{r}
+saveRDS(nctpm, "tpm.rds")
+saveRDS(results, "deseq2_results.rds")
+saveRDS(results.pairwise, "deseq2_results_pairwise.rds")
+
+```
+
+
+
+```{r}
+sessionInfo()
+```
